@@ -1,21 +1,67 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { body, param, query } from 'express-validator';
 import { validateRequest, requireAuth, requireRole } from '@/middlewares';
 import * as assetController from '@/controllers/asset.controller';
-import { AssetStatus, AssetType, OwnershipType } from '@/models/asset.model';
+import { AssetStatus, AssetType, OwnershipType, IAsset } from '@/models/asset.model';
+import { UserRole, IUser } from '@/models/user.model';
+import { Types } from 'mongoose';
+
+// Extend Express Request type to include user
+declare global {
+  namespace Express {
+    interface Request {
+      user?: IUser & { _id: Types.ObjectId };
+    }
+  }
+}
+
+interface AuthenticatedRequest extends Request {
+  user: IUser & { _id: Types.ObjectId };
+}
+
+// Import the AssetResponse type from the controller
+import { AssetResponse } from '@/controllers/asset.controller';
+
+// Re-export for consistency with other routes
+type ApiResponse<T = any> = AssetResponse<T>;
 
 const router = Router();
 
 // Apply authentication middleware to all routes
 router.use(requireAuth);
 
+// Role-based access control
+const requireAssetManagement = requireRole([UserRole.ADMIN, UserRole.COMPANY_ADMIN]);
+
+// Type-safe async handler that works with AssetResponse
+const asyncHandler = <T = any>(
+  handler: (
+    req: AuthenticatedRequest,
+    res: Response<AssetResponse<T>>,
+    next: NextFunction
+  ) => Promise<void | Response<any, Record<string, any>>>
+) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await handler(
+        req as AuthenticatedRequest,
+        res as Response<AssetResponse<T>>,
+        next
+      );
+    } catch (error) {
+      next(error);
+    }
+  };
+};
+
 /**
  * @route   POST /api/assets
  * @desc    Create a new asset
- * @access  Private
+ * @access  Private (Admin, Company Admin, Asset Manager)
  */
 router.post(
   '/',
+  requireAssetManagement,
   [
     body('name')
       .trim()
@@ -81,7 +127,9 @@ router.post(
     body('tags').optional().isArray(),
   ],
   validateRequest,
-  assetController.createAsset
+  asyncHandler<IAsset>(async (req, res) => {
+    await assetController.createAsset(req, res);
+  })
 );
 
 /**
@@ -108,7 +156,9 @@ router.get(
     query('companyId').optional().isMongoId(),
   ],
   validateRequest,
-  assetController.getAssets
+  asyncHandler<{ assets: IAsset[]; total: number }>(async (req, res) => {
+    await assetController.getAssets(req, res);
+  })
 );
 
 /**
@@ -122,7 +172,9 @@ router.get(
     query('limit').optional().isInt({ min: 1, max: 20 }),
   ],
   validateRequest,
-  assetController.getFeaturedAssets
+  asyncHandler<IAsset[]>(async (req, res) => {
+    await assetController.getFeaturedAssets(req, res);
+  })
 );
 
 /**
@@ -137,7 +189,9 @@ router.get(
     query('limit').optional().isInt({ min: 1, max: 50 }),
   ],
   validateRequest,
-  assetController.searchAssets
+  asyncHandler<IAsset[]>(async (req, res) => {
+    await assetController.searchAssets(req, res);
+  })
 );
 
 /**
@@ -151,7 +205,9 @@ router.get(
     param('id').isMongoId().withMessage('Valid asset ID is required'),
   ],
   validateRequest,
-  assetController.getAssetById
+  asyncHandler<IAsset>(async (req, res) => {
+    await assetController.getAssetById(req, res);
+  })
 );
 
 /**

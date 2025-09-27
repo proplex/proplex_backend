@@ -32,7 +32,7 @@ interface AssetQueryParams {
   sortOrder?: 'asc' | 'desc';
 }
 
-interface AssetResponse<T = any> {
+export interface AssetResponse<T = any> {
   success: boolean;
   message?: string;
   data?: T;
