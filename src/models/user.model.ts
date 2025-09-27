@@ -1,4 +1,4 @@
-import { Schema, model, Document, Types } from 'mongoose';
+import { Schema, model, Document, Types, Model } from 'mongoose';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 
@@ -18,16 +18,27 @@ export interface IUser extends Document {
   role: UserRole;
   company?: Types.ObjectId;
   isEmailVerified: boolean;
+  isActive: boolean;
   lastLogin?: Date;
   passwordChangedAt?: Date;
   passwordResetToken?: string;
   passwordResetExpires?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  
+  // Methods
   comparePassword(candidatePassword: string): Promise<boolean>;
   changedPasswordAfter(JWTTimestamp: number): boolean;
   createPasswordResetToken(): string;
+  isAdmin(): boolean;
+  isCompanyAdmin(): boolean;
 }
 
-const userSchema = new Schema<IUser>(
+interface IUserModel extends Model<IUser> {
+  isAdminUser(userId: Types.ObjectId | string): Promise<boolean>;
+}
+
+const userSchema = new Schema<IUser, IUserModel>(
   {
     email: {
       type: String,
@@ -58,7 +69,29 @@ const userSchema = new Schema<IUser>(
       type: String,
       enum: Object.values(UserRole),
       default: UserRole.USER,
-      index: true
+      set: async function(this: IUser, value: string) {
+        // Only allow setting admin role if the current user is an admin
+        if (value === UserRole.ADMIN) {
+          // Skip check for new documents or if _id is not available
+          if (this.isNew || !this._id) {
+            return value;
+          }
+          
+          const UserModel = this.constructor as unknown as IUserModel;
+          const currentUser = await UserModel.findById(this._id).select('role');
+          
+          // If this is an existing user being updated to admin
+          if (currentUser && currentUser.role !== UserRole.ADMIN) {
+            // Convert _id to string to ensure type safety
+            const userId = this._id.toString();
+            const isAdminCreating = await UserModel.isAdminUser(userId);
+            if (!isAdminCreating) {
+              throw new Error('Only admins can create other admin users');
+            }
+          }
+        }
+        return value;
+      }
     },
     company: {
       type: Schema.Types.ObjectId,
@@ -68,6 +101,11 @@ const userSchema = new Schema<IUser>(
     isEmailVerified: {
       type: Boolean,
       default: false,
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+      select: false
     },
     lastLogin: {
       type: Date,
@@ -114,6 +152,23 @@ userSchema.index({ company: 1 });
 userSchema.index({ role: 1 });
 userSchema.index({ isEmailVerified: 1 });
 
+// Method to check if user is an admin
+userSchema.methods.isAdmin = function(): boolean {
+  return this.role === UserRole.ADMIN;
+};
+
+// Method to check if user is a company admin
+userSchema.methods.isCompanyAdmin = function(): boolean {
+  return this.role === UserRole.COMPANY_ADMIN;
+};
+
+// Static method to check if a user is an admin
+userSchema.statics.isAdminUser = async function(userId: Types.ObjectId | string): Promise<boolean> {
+  // Find the user by ID and select only the role field
+  const user = await this.findById(userId).select('role').lean();
+  return user?.role === UserRole.ADMIN;
+};
+
 // Method to compare passwords
 userSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {
   return await bcrypt.compare(candidatePassword, this.password);
@@ -142,6 +197,7 @@ userSchema.methods.createPasswordResetToken = function (): string {
   return resetToken;
 };
 
-const User = model<IUser>('User', userSchema);
+// Create and export the model
+const User = model<IUser, IUserModel>('User', userSchema);
 
 export default User;
