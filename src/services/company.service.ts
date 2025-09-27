@@ -1,4 +1,5 @@
-import { Types, ClientSession, startSession } from 'mongoose';
+import { Types, ClientSession, startSession, PopulateOptions, Document, Model, PopulatedDoc } from 'mongoose';
+import { IUser } from '@/models/user.model';
 import Company, { 
   ICompany, 
   IBankAccount, 
@@ -17,9 +18,36 @@ import { BadRequestError } from '@/errors/bad-request-error';
 import { ValidationError } from '@/errors/validation-error';
 import { AppError } from '@/errors/app-error';
 
+// Extended interfaces for internal use with proper _id types
+type WithId<T> = T & { _id: Types.ObjectId };
+
+interface BankAccountWithId extends Omit<IBankAccount, 'documents'> {
+  _id: Types.ObjectId;
+  documents: IDocument[];
+  updatedAt?: Date;
+  updatedBy?: Types.ObjectId;
+  verifiedAt?: Date;
+  verifiedBy?: Types.ObjectId;
+}
+
+interface LegalAdvisorWithId extends Omit<ILegalAdvisor, 'documents'> {
+  _id: Types.ObjectId;
+  documents: IDocument[];
+  updatedAt?: Date;
+  updatedBy?: Types.ObjectId;
+}
+
+interface BoardMemberWithId extends Omit<IBoardMember, 'documents' | '_id'> {
+  _id: Types.ObjectId;
+  documents: IDocument[];
+  updatedAt?: Date;
+  updatedBy?: Types.ObjectId;
+  isDirector: boolean;
+}
+
 // Types
 export interface CompanyInput {
-  _id?: string;
+  _id?: string | Types.ObjectId;
   // Basic Information
   name: string;
   industry: string;
@@ -45,7 +73,7 @@ export interface CompanyInput {
   // SPV Specific
   isSpv?: boolean;
   spvType?: SpvType;
-  parentCompany?: string;
+  parentCompany?: string | Types.ObjectId;
   
   // Documents
   certificateOfIncorporation?: string;
@@ -79,9 +107,9 @@ export interface CompanyInput {
   verifiedBy?: string | Types.ObjectId;
   notes?: string;
   tags?: string[];
-  bankAccounts?: Array<Omit<IBankAccount, 'createdAt' | 'updatedAt' | '_id'>>;
-  legalAdvisors?: Array<Omit<ILegalAdvisor, 'createdAt' | 'updatedAt' | '_id'>>;
-  boardMembers?: Array<Omit<IBoardMember, 'createdAt' | 'updatedAt' | '_id'>>;
+  bankAccounts?: Array<Omit<IBankAccount, 'documents'> & { documents?: Array<Omit<IDocument, '_id'>> }>;
+  legalAdvisors?: Array<Omit<ILegalAdvisor, 'documents'> & { documents?: Array<Omit<IDocument, '_id'>> }>;
+  boardMembers?: Array<Omit<IBoardMember, 'documents'> & { documents?: Array<Omit<IDocument, '_id'>> }>;
   documents?: Array<Omit<IDocument, '_id'>>;
 }
 
@@ -92,74 +120,104 @@ const toObjectId = (id: string | Types.ObjectId | undefined): Types.ObjectId | u
 };
 
 // Helper function to transform input data
-const transformCompanyInput = (data: Partial<CompanyInput>, userId: string): Partial<ICompany> => {
-  const transformed: Partial<ICompany> = {};
+interface TransformedCompany extends Omit<Partial<ICompany>, 'bankAccounts' | 'legalAdvisors' | 'boardMembers' | 'documents'> {
+  bankAccounts?: BankAccountWithId[];
+  legalAdvisors?: LegalAdvisorWithId[];
+  boardMembers?: BoardMemberWithId[];
+  documents?: IDocument[];
+}
+
+const transformCompanyInput = (data: Partial<CompanyInput>, userId: string): TransformedCompany => {
+  const transformed: TransformedCompany = {};
   const userIdObj = new Types.ObjectId(userId);
   
   // Copy all properties except the ones we need to handle specially
-  Object.keys(data).forEach(key => {
-    if (key !== 'parentCompany' && key !== 'verifiedBy' && key !== 'bankAccounts' && 
-        key !== 'legalAdvisors' && key !== 'boardMembers' && key !== 'documents') {
-      (transformed as any)[key] = (data as any)[key];
-    }
-  });
+  const { 
+    parentCompany, 
+    verifiedBy, 
+    bankAccounts, 
+    legalAdvisors, 
+    boardMembers, 
+    documents: topLevelDocs,
+    _id,
+    ...restData 
+  } = data;
+  
+  Object.assign(transformed, restData);
   
   // Handle special fields
-  if (data.parentCompany) {
-    transformed.parentCompany = toObjectId(data.parentCompany);
+  if (parentCompany) {
+    transformed.parentCompany = toObjectId(parentCompany);
   }
   
-  if (data.verifiedBy) {
-    transformed.verifiedBy = toObjectId(data.verifiedBy);
+  if (verifiedBy) {
+    transformed.verifiedBy = toObjectId(verifiedBy);
   }
   
   // Set createdBy/updatedBy
-  if (!data._id) {
+  if (!_id) {
     transformed.createdBy = userIdObj;
   } else {
     transformed.updatedBy = userIdObj;
   }
   
   // Helper function to transform documents array
-  const transformDocuments = (docs: Array<Omit<IDocument, '_id'>> | undefined) => 
+  const transformDocuments = (docs: Array<Omit<IDocument, '_id'>> | undefined): IDocument[] => 
     docs?.map(doc => ({
       ...doc,
       _id: new Types.ObjectId(),
       uploadedBy: toObjectId(doc.uploadedBy) || userIdObj,
       uploadedAt: doc.uploadedAt || new Date()
-    }));
+    })) || [];
   
   // Handle bank accounts
-  if (data.bankAccounts) {
-    transformed.bankAccounts = data.bankAccounts.map(account => ({
-      ...account,
-      _id: new Types.ObjectId(),
-      verifiedBy: toObjectId(account.verifiedBy as any),
-      documents: transformDocuments(account.documents as any) || []
-    } as any)); // Use type assertion here
+  if (bankAccounts) {
+    transformed.bankAccounts = bankAccounts.map(account => {
+      const { documents, ...accountData } = account;
+      const bankAccount: BankAccountWithId = {
+        ...accountData,
+        _id: new Types.ObjectId(),
+        isPrimary: accountData.isPrimary || false,
+        isVerified: accountData.isVerified || false,
+        verifiedAt: accountData.isVerified ? new Date() : undefined,
+        verifiedBy: accountData.isVerified ? toObjectId(accountData.verifiedBy as any) : undefined,
+        documents: transformDocuments(documents) as IDocument[]
+      };
+      return bankAccount;
+    });
   }
   
   // Handle legal advisors
-  if (data.legalAdvisors) {
-    transformed.legalAdvisors = data.legalAdvisors.map(advisor => ({
-      ...advisor,
-      _id: new Types.ObjectId(),
-      documents: transformDocuments(advisor.documents as any) || []
-    } as any)); // Use type assertion here
+  if (legalAdvisors) {
+    transformed.legalAdvisors = legalAdvisors.map(advisor => {
+      const { documents, ...advisorData } = advisor;
+      const legalAdvisor: LegalAdvisorWithId = {
+        ...advisorData,
+        _id: new Types.ObjectId(),
+        isPrimary: advisorData.isPrimary || false,
+        documents: transformDocuments(documents) as IDocument[]
+      };
+      return legalAdvisor;
+    });
   }
   
   // Handle board members
-  if (data.boardMembers) {
-    transformed.boardMembers = data.boardMembers.map(member => ({
-      ...member,
-      _id: new Types.ObjectId(),
-      documents: transformDocuments(member.documents as any) || []
-    } as any)); // Use type assertion here
+  if (boardMembers) {
+    transformed.boardMembers = boardMembers.map(member => {
+      const { documents, ...memberData } = member;
+      const boardMember: BoardMemberWithId = {
+        ...memberData,
+        _id: new Types.ObjectId(),
+        isDirector: memberData.isDirector || false,
+        documents: transformDocuments(documents) as IDocument[]
+      };
+      return boardMember;
+    });
   }
   
   // Handle top-level documents
-  if (data.documents) {
-    transformed.documents = transformDocuments(data.documents);
+  if (topLevelDocs) {
+    transformed.documents = transformDocuments(topLevelDocs) as IDocument[];
   }
   
   return transformed;
@@ -301,7 +359,7 @@ export const getCompanies = async ({
   const queryBuilder = Company.find(query).sort(sort).skip(skip).limit(pagination.limit);
   
   // Add population based on include parameter
-  const populateOptions = [];
+  const populateOptions: PopulateOptions[] = [];
   
   if (include.includes('parentCompany') || include.length === 0) {
     populateOptions.push({ path: 'parentCompany', select: 'name email phone' });
@@ -347,7 +405,7 @@ export const getCompanyById = async (
   let query = Company.findById(id);
   
   // Add population based on requested fields
-  const populateOptions = [];
+  const populateOptions: PopulateOptions[] = [];
   
   if (populate.includes('parentCompany')) {
     populateOptions.push({ path: 'parentCompany', select: 'name email phone' });
@@ -530,123 +588,70 @@ export const addBankAccount = async (
   data: Omit<IBankAccount, 'createdAt' | 'updatedAt' | '_id'>,
   userId: string
 ): Promise<ICompany | null> => {
-  if (!Types.ObjectId.isValid(companyId)) {
-    throw new BadRequestError('Invalid company ID');
-  }
-
   const session = await startSession();
   session.startTransaction();
 
   try {
+    if (!Types.ObjectId.isValid(companyId)) {
+      throw new BadRequestError('Invalid company ID');
+    }
+
     const company = await Company.findById(companyId).session(session);
     if (!company) {
       throw new NotFoundError('Company not found');
     }
 
-    const bankAccount: any = {
-      ...data,
-      _id: new Types.ObjectId(),
-      verifiedBy: data.verifiedBy ? new Types.ObjectId(data.verifiedBy as string) : undefined,
-      documents: (data.documents || []).map(doc => ({
-        ...doc,
-        _id: new Types.ObjectId(),
-        uploadedBy: doc.uploadedBy ? new Types.ObjectId(doc.uploadedBy as string) : new Types.ObjectId(userId),
-        uploadedAt: new Date()
-      }))
-    };
-
-    company.bankAccounts.push(bankAccount);
-    await company.save({ session });
-    await session.commitTransaction();
-
-    return company.toObject({ virtuals: true });
-  } catch (error) {
-    await session.abortTransaction();
-    throw error;
-  } finally {
-    await session.endSession();
-  }
-  const session = await startSession();
-  session.startTransaction();
-
-  try {
-    const company = await Company.findById(companyId).session(session);
-    if (!company) {
-      throw new NotFoundError('Company not found');
+    // Validate required fields
+    if (!data.accountNumber || !data.bankName || !data.ifscCode) {
+      throw new BadRequestError('Account number, bank name, and IFSC code are required');
     }
 
-    const bankAccount: IBankAccount = {
+    // Check for duplicate account number
+    const existingAccount = company.bankAccounts.find(
+      acc => acc.accountNumber === data.accountNumber
+    );
+    
+    if (existingAccount) {
+      throw new BadRequestError('Bank account with this account number already exists');
+    }
+
+    const newAccount: BankAccountWithId = {
       ...data,
       _id: new Types.ObjectId(),
-      verifiedBy: data.verifiedBy ? new Types.ObjectId(data.verifiedBy) : undefined,
+      isPrimary: false,
+      isVerified: false,
+      verifiedAt: undefined,
+      verifiedBy: undefined,
       documents: data.documents?.map(doc => ({
         ...doc,
         _id: new Types.ObjectId(),
-        uploadedBy: doc.uploadedBy || new Types.ObjectId(userId),
+        uploadedBy: toObjectId(doc.uploadedBy as any) || new Types.ObjectId(userId),
         uploadedAt: doc.uploadedAt || new Date()
       })) || []
-    };
+    } as unknown as BankAccountWithId;
+  
+    company.bankAccounts.push(newAccount);
 
-    company.bankAccounts.push(bankAccount);
+    // If this is the first bank account, set it as primary
+    if (company.bankAccounts.length === 1) {
+      newAccount.isPrimary = true;
+    }
+
+    company.updatedBy = new Types.ObjectId(userId);
     await company.save({ session });
     await session.commitTransaction();
 
-    return company.toObject({ virtuals: true });
+    return company;
   } catch (error) {
     await session.abortTransaction();
     throw error;
   } finally {
     await session.endSession();
   }
-  if (!Types.ObjectId.isValid(companyId)) {
-    throw new BadRequestError('Invalid company ID');
-  }
-  
-  // Check if company exists
-  const company = await Company.findById(companyId);
-  if (!company) {
-    throw new NotFoundError('Company not found');
-  }
-  
-  // Check if account number already exists for this company
-  const existingAccount = company.bankAccounts?.find(
-    acc => acc.accountNumber === data.accountNumber
-  );
-  
-  if (existingAccount) {
-    throw new BadRequestError('Bank account with this account number already exists');
-  }
-  
-  const newAccount: IBankAccount = {
-    _id: new Types.ObjectId(),
-    ...data,
-    isVerified: false,
-    verifiedAt: undefined,
-    verifiedBy: undefined,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    createdBy: new Types.ObjectId(userId),
-  };
-  
-  // If this is the first account, set it as primary
-  if (!company.bankAccounts || company.bankAccounts.length === 0) {
-    newAccount.isPrimary = true;
-  }
-  
-  const updatedCompany = await Company.findByIdAndUpdate(
-    companyId,
-    { $push: { bankAccounts: newAccount } },
-    { new: true, runValidators: true }
-  )
-  .populate('bankAccounts.verifiedBy', 'name email')
-  .populate('bankAccounts.createdBy', 'name email')
-  .lean();
-  
-  return updatedCompany;
 };
 
 /**
- * Update an existing bank account
+ * Update a bank account
  */
 export const updateBankAccount = async (
   companyId: string,
@@ -654,99 +659,76 @@ export const updateBankAccount = async (
   data: Partial<Omit<IBankAccount, 'createdAt' | 'updatedAt' | '_id'>>,
   userId: string
 ): Promise<ICompany | null> => {
-  if (!Types.ObjectId.isValid(companyId) || !Types.ObjectId.isValid(accountId)) {
-    throw new BadRequestError('Invalid company or account ID');
-  }
-  
-  // Check if company exists
-  const company = await Company.findById(companyId);
-  if (!company) {
-    throw new NotFoundError('Company not found');
-  }
-  
-  // Check if account exists
-  const accountIndex = company.bankAccounts?.findIndex(
-    acc => acc._id.toString() === accountId
-  );
-  
-  if (accountIndex === -1) {
-    throw new NotFoundError('Bank account not found');
-  }
-  
-  // Prevent updating certain fields directly
-  const { _id, isVerified, verifiedAt, verifiedBy, ...updateData } = data;
-  
-  // If updating to primary, unset primary flag from other accounts
-  if (updateData.isPrimary) {
-    await Company.updateOne(
-      { _id: companyId, 'bankAccounts._id': { $ne: accountId } },
-      { $set: { 'bankAccounts.$.isPrimary': false } }
-    );
-  }
-  
-  // Build the update object
-  const update: Record<string, any> = {
-    'bankAccounts.$.updatedAt': new Date(),
-    'bankAccounts.$.updatedBy': new Types.ObjectId(userId),
-  };
-  
-  // Add only the fields that are being updated
-  Object.entries(updateData).forEach(([key, value]) => {
-    if (value !== undefined) {
-      update[`bankAccounts.$.${key}`] = value;
-    }
-  });
-  
-  const updatedCompany = await Company.findOneAndUpdate(
-    { _id: companyId, 'bankAccounts._id': accountId },
-    { $set: update },
-    { new: true, runValidators: true }
-  )
-  .populate('bankAccounts.verifiedBy', 'name email')
-  .populate('bankAccounts.createdBy', 'name email')
-  .populate('bankAccounts.updatedBy', 'name email')
-  .lean();
-  
-  return updatedCompany;
-};
-
-/**
- * Add a legal advisor to a company
- */
-export const addLegalAdvisor = async (
-  companyId: string,
-  data: Omit<ILegalAdvisor, 'createdAt' | 'updatedAt' | '_id'>,
-  userId: string
-): Promise<ICompany | null> => {
-  if (!Types.ObjectId.isValid(companyId)) {
-    throw new BadRequestError('Invalid company ID');
-  }
-
   const session = await startSession();
   session.startTransaction();
 
   try {
+    if (!Types.ObjectId.isValid(companyId) || !Types.ObjectId.isValid(accountId)) {
+      throw new BadRequestError('Invalid company ID or account ID');
+    }
+
     const company = await Company.findById(companyId).session(session);
     if (!company) {
       throw new NotFoundError('Company not found');
     }
 
-    const legalAdvisor: any = {
-      ...data,
-      _id: new Types.ObjectId(),
-      documents: (data.documents || []).map(doc => ({
-        ...doc,
-        _id: new Types.ObjectId(),
-        uploadedBy: doc.uploadedBy ? new Types.ObjectId(doc.uploadedBy as string) : new Types.ObjectId(userId),
-        uploadedAt: new Date()
-      }))
-    };
+    const accountIndex = company.bankAccounts.findIndex(acc => acc._id?.toString() === accountId);
+    if (accountIndex === -1) {
+      throw new NotFoundError('Bank account not found');
+    }
 
-    company.legalAdvisors.push(legalAdvisor);
+    // Prevent updating verified status directly (use verifyBankAccount instead)
+    if ('isVerified' in data) {
+      delete data.isVerified;
+    }
+    if ('verifiedAt' in data) {
+      delete data.verifiedAt;
+    }
+    if ('verifiedBy' in data) {
+      delete data.verifiedBy;
+    }
+
+    // Get the current account and create a new object with the updated fields
+    const currentAccount = company.bankAccounts[accountIndex];
+    const updatedAccount: IBankAccount = {
+      ...currentAccount,
+      ...data,
+      // Remove any undefined values to prevent overriding with undefined
+      ...Object.fromEntries(
+        Object.entries(data).filter(([_, v]) => v !== undefined)
+      )
+    };
+    
+    // Ensure we have the required fields with proper types
+    updatedAccount.isPrimary = updatedAccount.isPrimary ?? false;
+    updatedAccount.isVerified = updatedAccount.isVerified ?? false;
+
+    // If this account is set as primary, update other accounts
+    if (data.isPrimary === true) {
+      company.bankAccounts = company.bankAccounts.map((acc, idx) => {
+        if (idx === accountIndex) {
+          return { ...acc, isPrimary: true };
+        }
+        return { ...acc, isPrimary: false };
+      });
+    } else {
+      // If no accounts are primary, make this one primary
+      const hasPrimary = company.bankAccounts.some((acc, idx) => 
+        acc.isPrimary && idx !== accountIndex
+      );
+      
+      if (!hasPrimary) {
+        updatedAccount.isPrimary = true;
+      }
+      
+      company.bankAccounts[accountIndex] = updatedAccount;
+    }
+
+    company.updatedBy = new Types.ObjectId(userId);
     await company.save({ session });
     await session.commitTransaction();
 
-    return company.toObject({ virtuals: true });
+    return company;
   } catch (error) {
     await session.abortTransaction();
     throw error;
@@ -763,105 +745,57 @@ export const addBoardMember = async (
   data: Omit<IBoardMember, 'createdAt' | 'updatedAt' | '_id'>,
   userId: string
 ): Promise<ICompany | null> => {
-  if (!Types.ObjectId.isValid(companyId)) {
-    throw new BadRequestError('Invalid company ID');
-  }
-
   const session = await startSession();
   session.startTransaction();
 
   try {
+    if (!Types.ObjectId.isValid(companyId)) {
+      throw new BadRequestError('Invalid company ID');
+    }
+
     const company = await Company.findById(companyId).session(session);
     if (!company) {
       throw new NotFoundError('Company not found');
     }
 
-    const boardMember: any = {
+    // Validate required fields
+    if (!data.name || !data.email || !data.phone || !data.designation || !data.address) {
+      throw new BadRequestError('Name, email, phone, designation, and address are required');
+    }
+
+    // Check for duplicate email
+    const emailExists = company.boardMembers.some(
+      member => member.email.toLowerCase() === data.email.toLowerCase()
+    );
+
+    if (emailExists) {
+      throw new BadRequestError('A board member with this email already exists');
+    }
+
+    const newMember: BoardMemberWithId = {
       ...data,
       _id: new Types.ObjectId(),
+      isDirector: data.isDirector || false,
       documents: (data.documents || []).map(doc => ({
         ...doc,
         _id: new Types.ObjectId(),
-        uploadedBy: doc.uploadedBy ? new Types.ObjectId(doc.uploadedBy as string) : new Types.ObjectId(userId),
-        uploadedAt: new Date()
-      }))
-    };
-
-    company.boardMembers.push(boardMember);
-    await company.save({ session });
-    await session.commitTransaction();
-
-    return company.toObject({ virtuals: true });
-  } catch (error) {
-    await session.abortTransaction();
-    throw error;
-  } finally {
-    await session.endSession();
-  }
-  const session = await startSession();
-  session.startTransaction();
-
-  try {
-    const company = await Company.findById(companyId).session(session);
-    if (!company) {
-      throw new NotFoundError('Company not found');
-    }
-
-    const boardMember: IBoardMember = {
-      ...data,
-      _id: new Types.ObjectId(),
-      documents: data.documents?.map(doc => ({
-        ...doc,
-        _id: new Types.ObjectId(),
-        uploadedBy: doc.uploadedBy || new Types.ObjectId(userId),
+        uploadedBy: toObjectId(doc.uploadedBy as any) || new Types.ObjectId(userId),
         uploadedAt: doc.uploadedAt || new Date()
-      })) || []
-    };
-
-    company.boardMembers.push(boardMember);
+      }))
+    } as unknown as BoardMemberWithId;
+    
+    company.boardMembers.push(newMember);
+    company.updatedBy = new Types.ObjectId(userId);
     await company.save({ session });
     await session.commitTransaction();
 
-    return company.toObject({ virtuals: true });
+    return company;
   } catch (error) {
     await session.abortTransaction();
     throw error;
   } finally {
     await session.endSession();
   }
-  if (!Types.ObjectId.isValid(companyId)) {
-    throw new BadRequestError('Invalid company ID');
-  }
-  
-  // Check if company exists
-  const company = await Company.findById(companyId);
-  if (!company) {
-    throw new NotFoundError('Company not found');
-  }
-  
-  const newMember: IBoardMember = {
-    _id: new Types.ObjectId(),
-    ...data,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    createdBy: new Types.ObjectId(userId),
-  };
-  
-  // If this is the first member, set as primary
-  if (!company.boardMembers || company.boardMembers.length === 0) {
-    newMember.isPrimary = true;
-  }
-  
-  const updatedCompany = await Company.findByIdAndUpdate(
-    companyId,
-    { $push: { boardMembers: newMember } },
-    { new: true, runValidators: true }
-  )
-  .populate('boardMembers.createdBy', 'name email')
-  .populate('boardMembers.updatedBy', 'name email')
-  .lean();
-  
-  return updatedCompany;
 };
 
 /**
@@ -870,59 +804,75 @@ export const addBoardMember = async (
 export const updateBoardMember = async (
   companyId: string,
   memberId: string,
-  data: Partial<IBoardMember>,
+  data: Partial<Omit<IBoardMember, '_id'>>,
   userId: string
 ): Promise<ICompany | null> => {
-  if (!Types.ObjectId.isValid(companyId) || !Types.ObjectId.isValid(memberId)) {
-    throw new BadRequestError('Invalid company or member ID');
-  }
-  
-  // Check if company exists
-  const company = await Company.findById(companyId);
-  if (!company) {
-    throw new NotFoundError('Company not found');
-  }
-  
-  // Check if member exists
-  const memberIndex = company.boardMembers?.findIndex(
-    m => m._id.toString() === memberId
-  );
-  
-  if (memberIndex === -1) {
-    throw new NotFoundError('Board member not found');
-  }
-  
-  // If setting as primary, unset primary flag from other members
-  if (data.isPrimary) {
-    await Company.updateOne(
-      { _id: companyId, 'boardMembers._id': { $ne: memberId } },
-      { $set: { 'boardMembers.$.isPrimary': false } }
-    );
-  }
-  
-  // Build the update object
-  const update: Record<string, any> = {
-    'boardMembers.$.updatedAt': new Date(),
-    'boardMembers.$.updatedBy': new Types.ObjectId(userId),
-  };
-  
-  // Add only the fields that are being updated
-  Object.entries(data).forEach(([key, value]) => {
-    if (value !== undefined && key !== '_id') {
-      update[`boardMembers.$.${key}`] = value;
+  const session = await startSession();
+  session.startTransaction();
+
+  try {
+    if (!Types.ObjectId.isValid(companyId) || !Types.ObjectId.isValid(memberId)) {
+      throw new BadRequestError('Invalid company or member ID');
     }
-  });
-  
-  const updatedCompany = await Company.findOneAndUpdate(
-    { _id: companyId, 'boardMembers._id': memberId },
-    { $set: update },
-    { new: true, runValidators: true }
-  )
-  .populate('boardMembers.createdBy', 'name email')
-  .populate('boardMembers.updatedBy', 'name email')
-  .lean();
-  
-  return updatedCompany;
+
+    // Don't include _id in update data
+    const updateData = { ...data };
+    if ('_id' in updateData) {
+      delete updateData._id;
+    }
+    
+    // Prepare the update object
+    const update: Record<string, any> = {
+      'boardMembers.$.updatedAt': new Date(),
+      'boardMembers.$.updatedBy': new Types.ObjectId(userId)
+    };
+
+    // Add only the fields that are being updated
+    Object.entries(updateData).forEach(([key, value]) => {
+      if (value !== undefined) {
+        update[`boardMembers.$.${key}`] = value;
+      }
+    });
+
+    // Check for duplicate email if email is being updated
+    if (updateData.email) {
+      const company = await Company.findById(companyId).session(session);
+      if (!company) {
+        throw new NotFoundError('Company not found');
+      }
+
+      const emailExists = company.boardMembers.some(
+        member => 
+          member.email?.toLowerCase() === updateData.email?.toLowerCase() && 
+          member._id?.toString() !== memberId
+      );
+
+      if (emailExists) {
+        throw new BadRequestError('A board member with this email already exists');
+      }
+    }
+
+    const updatedCompany = await Company.findOneAndUpdate(
+      { _id: companyId, 'boardMembers._id': memberId },
+      { $set: update },
+      { new: true, runValidators: true, session }
+    )
+    .populate('boardMembers.createdBy', 'name email')
+    .populate('boardMembers.updatedBy', 'name email')
+    .session(session);
+
+    if (!updatedCompany) {
+      throw new NotFoundError('Company or board member not found');
+    }
+
+    await session.commitTransaction();
+    return updatedCompany;
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    await session.endSession();
+  }
 };
 
 /**
@@ -962,29 +912,86 @@ export const verifyBankAccount = async (
   isVerified: boolean,
   verifiedBy: string
 ): Promise<ICompany | null> => {
-  if (!Types.ObjectId.isValid(companyId) || !Types.ObjectId.isValid(accountId)) {
-    throw new BadRequestError('Invalid company or account ID');
-  }
+  const session = await startSession();
+  session.startTransaction();
 
-  const company = await Company.findOneAndUpdate(
-    { _id: companyId, 'bankAccounts._id': accountId },
-    {
+  try {
+    if (!Types.ObjectId.isValid(companyId) || !Types.ObjectId.isValid(accountId)) {
+      throw new BadRequestError('Invalid company or account ID');
+    }
+
+    // Verify the company and account exist
+    const company = await Company.findById(companyId).session(session);
+    if (!company) {
+      throw new NotFoundError('Company not found');
+    }
+
+    const accountIndex = company.bankAccounts.findIndex(
+      acc => acc._id?.toString() === accountId
+    );
+
+    if (accountIndex === -1) {
+      throw new NotFoundError('Bank account not found');
+    }
+
+    // If the account is already in the desired state, return early
+    if (company.bankAccounts[accountIndex].isVerified === isVerified) {
+      return company;
+    }
+
+    // Prepare the update object with explicit types
+    const update: {
+      $set: {
+        'bankAccounts.$.isVerified': boolean;
+        'bankAccounts.$.verifiedAt': Date | null;
+        'bankAccounts.$.verifiedBy': Types.ObjectId | null;
+        'bankAccounts.$.updatedAt': Date;
+        'bankAccounts.$.updatedBy': Types.ObjectId;
+        updatedAt: Date;
+        updatedBy: Types.ObjectId;
+        'bankAccounts.$.isPrimary'?: boolean;
+      };
+    } = {
       $set: {
         'bankAccounts.$.isVerified': isVerified,
         'bankAccounts.$.verifiedAt': isVerified ? new Date() : null,
-        'bankAccounts.$.verifiedBy': isVerified ? verifiedBy : null,
+        'bankAccounts.$.verifiedBy': isVerified ? new Types.ObjectId(verifiedBy) : null,
         'bankAccounts.$.updatedAt': new Date(),
-        'bankAccounts.$.updatedBy': verifiedBy
+        'bankAccounts.$.updatedBy': new Types.ObjectId(verifiedBy),
+        updatedAt: new Date(),
+        updatedBy: new Types.ObjectId(verifiedBy)
       }
-    },
-    { new: true }
-  );
+    };
 
-  if (!company) {
-    throw new NotFoundError('Company or bank account not found');
+    // If verifying, ensure there's at least one primary account
+    if (isVerified) {
+      const hasPrimary = company.bankAccounts.some(
+        (acc, idx) => acc.isPrimary && idx !== accountIndex
+      );
+
+      if (!hasPrimary) {
+        update.$set['bankAccounts.$.isPrimary'] = true;
+      }
+    }
+
+    const updatedCompany = await Company.findOneAndUpdate(
+      { _id: companyId, 'bankAccounts._id': accountId },
+      update,
+      { new: true, runValidators: true, session }
+    );
+
+    if (!updatedCompany) {
+      throw new Error('Failed to update bank account');
+    }
+
+    await session.commitTransaction();
+    return updatedCompany;
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    await session.endSession();
   }
-
-  return company;
 };
 
 /**
@@ -1022,45 +1029,71 @@ export const updateLegalAdvisor = async (
  */
 export const removeLegalAdvisor = async (
   companyId: string,
-  memberId: string,
+  advisorId: string,
   userId: string
 ): Promise<ICompany | null> => {
-  if (!Types.ObjectId.isValid(companyId) || !Types.ObjectId.isValid(memberId)) {
-    throw new BadRequestError('Invalid company or member ID');
+  const session = await startSession();
+  session.startTransaction();
+
+  try {
+    if (!Types.ObjectId.isValid(companyId) || !Types.ObjectId.isValid(advisorId)) {
+      throw new BadRequestError('Invalid company or advisor ID');
+    }
+
+    // Check if company exists
+    const company = await Company.findById(companyId)
+      .populate<{ legalAdvisors: ILegalAdvisor[] }>('legalAdvisors')
+      .session(session);
+    if (!company) {
+      throw new NotFoundError('Company not found');
+    }
+
+    // Check if advisor exists
+    const legalAdvisor = company.legalAdvisors.find(adv => adv._id?.toString() === advisorId);
+    if (!legalAdvisor?._id) {
+      throw new NotFoundError('Legal advisor not found');
+    }
+
+    // Check if this is the only advisor (prevent removing the last advisor)
+    if (company.legalAdvisors.length <= 1) {
+      throw new BadRequestError('Cannot remove the only legal advisor');
+    }
+
+    // Remove the advisor
+    const update = {
+      $pull: { legalAdvisors: { _id: advisorId } },
+      $set: { 
+        updatedBy: new Types.ObjectId(userId),
+        updatedAt: new Date()
+      }
+    };
+
+    const updatedCompany = await Company.findByIdAndUpdate(
+      companyId,
+      update,
+      { new: true, session }
+    );
+
+    if (!updatedCompany) {
+      throw new Error('Failed to remove legal advisor');
+    }
+
+    await session.commitTransaction();
+    return updatedCompany;
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    await session.endSession();
   }
   
-  // Check if company exists
-  const company = await Company.findById(companyId);
-  if (!company) {
-    throw new NotFoundError('Company not found');
-  }
-  
-  // Check if member exists and is not primary
-  const member = company.boardMembers?.find(
-    m => m._id.toString() === memberId
-  );
-  
-  if (!member) {
-    throw new NotFoundError('Board member not found');
-  }
-  
-  if (member.isPrimary) {
-    throw new BadRequestError('Cannot delete primary board member');
-  }
-  
-  const updatedCompany = await Company.findByIdAndUpdate(
-    companyId,
-    { 
-      $pull: { boardMembers: { _id: memberId } },
-      $set: { updatedBy: new Types.ObjectId(userId) }
-    },
-    { new: true }
-  )
-  .populate('boardMembers.createdBy', 'name email')
-  .populate('boardMembers.updatedBy', 'name email')
-  .lean();
-  
-  return updatedCompany;
+  // Populate the updated company with board members' createdBy and updatedBy
+  const populatedCompany = await Company.findById(companyId)
+    .populate('boardMembers.createdBy', 'name email')
+    .populate('boardMembers.updatedBy', 'name email')
+    .lean();
+    
+  return populatedCompany;
 };
 
 /**
@@ -1068,7 +1101,7 @@ export const removeLegalAdvisor = async (
  */
 export const uploadDocument = async (
   companyId: string,
-  document: IDocument,
+  document: Omit<IDocument, '_id' | 'uploadedAt' | 'uploadedBy'>,
   userId: string
 ): Promise<ICompany | null> => {
   if (!Types.ObjectId.isValid(companyId)) {
@@ -1081,20 +1114,21 @@ export const uploadDocument = async (
     throw new NotFoundError('Company not found');
   }
   
-  const newDocument: IDocument = {
-    _id: new Types.ObjectId(),
-    ...document,
-    uploadedAt: new Date(),
-    uploadedBy: new Types.ObjectId(userId),
-  };
-  
+  // Add the document to the company's documents array
   const updatedCompany = await Company.findByIdAndUpdate(
     companyId,
-    { $push: { documents: newDocument } },
-    { new: true, runValidators: true }
-  )
-  .populate('documents.uploadedBy', 'name email')
-  .lean();
+    {
+      $push: {
+        documents: {
+          ...document,
+          _id: new Types.ObjectId(),
+          uploadedAt: new Date(),
+          uploadedBy: new Types.ObjectId(userId)
+        }
+      }
+    },
+    { new: true }
+  );
   
   return updatedCompany;
 };
@@ -1108,7 +1142,7 @@ export const deleteDocument = async (
   userId: string
 ): Promise<ICompany | null> => {
   if (!Types.ObjectId.isValid(companyId) || !Types.ObjectId.isValid(documentId)) {
-    throw new BadRequestError('Invalid company or document ID');
+    throw new BadRequestError('Invalid company ID or document ID');
   }
   
   // Check if company exists
@@ -1118,24 +1152,26 @@ export const deleteDocument = async (
   }
   
   // Check if document exists
-  const document = company.documents?.find(doc => doc._id.toString() === documentId);
-  if (!document) {
+  const companyDoc = company as unknown as (ICompany & { documents?: Array<IDocument & { _id?: Types.ObjectId }> });
+  const documentIndex = companyDoc.documents?.findIndex((doc: IDocument & { _id?: Types.ObjectId }) => doc._id?.toString() === documentId) ?? -1;
+  if (documentIndex === -1) {
     throw new NotFoundError('Document not found');
   }
   
   // Here you might want to delete the actual file from storage
   // before removing the reference from the database
   
+  // Use $pull to remove the document from the array
   const updatedCompany = await Company.findByIdAndUpdate(
     companyId,
     { 
-      $pull: { documents: { _id: documentId } },
-      $set: { updatedBy: new Types.ObjectId(userId) }
+      $pull: { 
+        documents: { _id: new Types.ObjectId(documentId) } 
+      },
+      $set: { updatedAt: new Date(), updatedBy: new Types.ObjectId(userId) }
     },
     { new: true }
-  )
-  .populate('documents.uploadedBy', 'name email')
-  .lean();
+  );
   
   return updatedCompany;
 };

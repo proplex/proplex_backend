@@ -20,10 +20,36 @@ export const createAsset = async (data: AssetInput): Promise<IAsset> => {
   return asset.toJSON();
 };
 
-export const getAssets = async (): Promise<IAsset[]> => {
-  const assets = await Asset.find()
-    .populate('companyDetails')
-    .sort({ createdAt: -1 });
+interface GetAssetsOptions {
+  query?: Record<string, any>;
+  sort?: Record<string, 1 | -1>;
+  limit?: number;
+  skip?: number;
+  populate?: string | string[];
+}
+
+export const getAssets = async (options: GetAssetsOptions = {}): Promise<IAsset[]> => {
+  const { 
+    query = {}, 
+    sort = { createdAt: -1 }, 
+    limit,
+    skip,
+    populate = 'companyDetails'
+  } = options;
+  
+  let queryBuilder = Asset.find(query)
+    .populate(populate)
+    .sort(sort);
+
+  if (skip) {
+    queryBuilder = queryBuilder.skip(skip);
+  }
+  
+  if (limit) {
+    queryBuilder = queryBuilder.limit(limit);
+  }
+  
+  const assets = await queryBuilder.exec();
   return assets.map(asset => asset.toJSON());
 };
 
@@ -57,8 +83,59 @@ export const deleteAsset = async (id: string): Promise<boolean> => {
 };
 
 export const getAssetsByCompany = async (companyId: string): Promise<IAsset[]> => {
-  const assets = await Asset.find({ company: companyId })
-    .populate('companyDetails')
-    .sort({ createdAt: -1 });
+  const assets = await Asset.find({ company: new Types.ObjectId(companyId) })
+    .populate('companyDetails');
   return assets.map(asset => asset.toJSON());
+};
+
+export const countAssets = async (query: Record<string, any> = {}): Promise<number> => {
+  return Asset.countDocuments(query).exec();
+};
+
+export const changeAssetStatus = async (
+  assetId: string, 
+  status: AssetStatus,
+  userId: Types.ObjectId | string
+): Promise<IAsset | null> => {
+  const asset = await Asset.findByIdAndUpdate(
+    assetId,
+    { 
+      status,
+      updatedBy: new Types.ObjectId(userId),
+      updatedAt: new Date()
+    },
+    { new: true }
+  ).populate('companyDetails');
+  
+  return asset ? asset.toJSON() : null;
+};
+
+export const getAssetStats = async (): Promise<{
+  total: number;
+  byStatus: Record<string, number>;
+  byType: Record<string, number>;
+}> => {
+  const [total, byStatus, byType] = await Promise.all([
+    Asset.countDocuments(),
+    Asset.aggregate([
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+      { $project: { status: '$_id', count: 1, _id: 0 } }
+    ]),
+    Asset.aggregate([
+      { $group: { _id: '$type', count: { $sum: 1 } } },
+      { $project: { type: '$_id', count: 1, _id: 0 } }
+    ])
+  ]);
+
+  return {
+    total,
+    byStatus: byStatus.reduce((acc, { status, count }) => ({
+      ...acc,
+      [status]: count
+    }), {}),
+    byType: byType.reduce((acc, { type, count }) => ({
+      ...acc,
+      [type]: count
+    }), {})
+  };
 };

@@ -25,6 +25,7 @@ export type BankAccountType = typeof BankAccountType[number];
 
 // Interface for bank account
 export interface IBankAccount {
+  _id?: Types.ObjectId;
   accountNumber: string;
   accountType: BankAccountType;
   bankName: string;
@@ -35,10 +36,13 @@ export interface IBankAccount {
   verifiedAt?: Date;
   verifiedBy?: Types.ObjectId;
   documents?: IDocument[];
+  updatedAt?: Date;
+  updatedBy?: Types.ObjectId;
 }
 
 // Interface for legal advisor
 export interface ILegalAdvisor {
+  _id?: Types.ObjectId;
   name: string;
   email: string;
   phone: string;
@@ -46,20 +50,26 @@ export interface ILegalAdvisor {
   address: string;
   isPrimary: boolean;
   documents?: IDocument[];
+  updatedAt?: Date;
+  updatedBy?: Types.ObjectId;
 }
 
 // Interface for board member
 export interface IBoardMember {
+  _id?: Types.ObjectId;
   name: string;
   email: string;
   phone: string;
   designation: string;
   isDirector: boolean;
+  isExecutive?: boolean;
   dinNumber?: string;
   panNumber?: string;
   aadhaarNumber?: string;
   address: string;
   documents?: IDocument[];
+  updatedAt?: Date;
+  updatedBy?: Types.ObjectId;
 }
 
 // Main company interface

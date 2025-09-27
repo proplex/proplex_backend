@@ -1,24 +1,33 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { Types } from 'mongoose';
+import { IUser } from '@/models/user.model';
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: IUser & { _id: Types.ObjectId };
+    }
+    
+    namespace Multer {
+      interface File {
+        fieldname: string;
+        originalname: string;
+        encoding: string;
+        mimetype: string;
+        size: number;
+        destination: string;
+        filename: string;
+        path: string;
+        buffer: Buffer;
+      }
+    }
+  }
+}
+
 import * as companyService from '@/services/company.service';
 import { IBankAccount, ILegalAdvisor, IBoardMember, IDocument } from '@/models/company.model';
 import { UserRole } from '@/models/user.model';
 
-declare module 'express' {
-  interface Request {
-    file?: {
-      fieldname: string;
-      originalname: string;
-      encoding: string;
-      mimetype: string;
-      size: number;
-      destination: string;
-      filename: string;
-      path: string;
-      buffer?: Buffer;
-    };
-  }
-}
 import { 
   createCompanyValidator, 
   updateCompanyValidator, 
@@ -58,11 +67,11 @@ export const handleErrors = (err: any, req: Request, res: Response, next: NextFu
 };
 
 // Company CRUD operations
-export const createCompany = [
+export const createCompany: RequestHandler[] = [
   validate(createCompanyValidator),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const userId = req.user?.id;
+      const userId = req.user?._id;
       if (!userId) {
         throw new UnauthorizedError('Authentication required');
       }
@@ -78,7 +87,7 @@ export const createCompany = [
   }
 ];
 
-export const getCompanies = [
+export const getCompanies: RequestHandler[] = [
   validate(getCompaniesValidator),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -114,18 +123,16 @@ export const getCompanies = [
   }
 ];
 
-export const getCompanyById = async (req: Request, res: Response, next: NextFunction) => {
+export const getCompany = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const company = await companyService.getCompanyById(req.params.id);
+    const company = await companyService.getCompanyById(req.params.id, [
+      'parentCompany', 
+      'createdBy', 
+      'verifiedBy'
+    ]);
+    
     if (!company) {
       throw new NotFoundError('Company');
-    }
-    
-    // Check if user has permission to view this company
-    if (req.user?.role !== 'admin' && 
-        company.createdBy && 
-        company.createdBy.toString() !== req.user?.id.toString()) {
-      throw new ForbiddenError();
     }
     
     res.status(200).json({ 
