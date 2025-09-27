@@ -5,6 +5,8 @@ interface AssetInput {
   name: string;
   description?: string;
   company: string;
+  updatedBy?: Types.ObjectId | string;
+  updatedAt?: Date;
   value: number;
   purchaseDate: Date;
   status?: AssetStatus;
@@ -60,12 +62,21 @@ export const getAssetById = async (id: string): Promise<IAsset | null> => {
 
 export const updateAsset = async (
   id: string,
-  data: Partial<AssetInput>
+  data: Partial<AssetInput>,
+  updatedBy?: Types.ObjectId | string
 ): Promise<IAsset | null> => {
   const updateData = { ...data };
   
   if (data.company) {
     updateData.company = new Types.ObjectId(data.company) as any;
+  }
+  
+  // Add updatedBy if provided
+  if (updatedBy) {
+    updateData.updatedBy = typeof updatedBy === 'string' 
+      ? new Types.ObjectId(updatedBy) 
+      : updatedBy;
+    updateData.updatedAt = new Date();
   }
   
   const asset = await Asset.findByIdAndUpdate(

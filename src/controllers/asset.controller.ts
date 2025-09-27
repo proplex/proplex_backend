@@ -1,9 +1,10 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import * as assetService from '@/services/asset.service';
 import { validationResult } from 'express-validator';
 import { Types } from 'mongoose';
 import { IUser } from '@/models/user.model';
 import { IAsset, AssetStatus } from '@/models/asset.model';
+import { NotAuthorizedError } from '../errors/not-authorized-error';
 
 // Extend Express Request type to include user
 declare global {
@@ -160,13 +161,13 @@ export const getAssets = async (req: Request, res: Response<AssetResponse<{ asse
 
     // If user is not admin, only show published assets or assets they created
     if (!req.user || req.user.role !== 'admin') {
-      query.$or = [
+      const userId = req.user?._id;
+      const orConditions = [
         { status: AssetStatus.PUBLISHED },
-        ...(req.user && req.user._id ? [{ createdBy: new Types.ObjectId(req.user._id as string) }] : [])
+        ...(userId ? [{ createdBy: userId }] : [])
       ];
-      if (query.$or) {
-        query.$or = query.$or.flat();
-      }
+      
+      query.$or = orConditions.flat();
     }
 
     // Execute query with pagination
@@ -381,8 +382,13 @@ export const getAssetById = async (req: Request, res: Response<AssetResponse<IAs
  * @desc    Update an asset
  * @access  Private
  */
-export const updateAsset = async (req: Request, res: Response) => {
+export const updateAsset = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    // Check if user is authenticated
+    if (!req.user) {
+      throw new Error('User not authenticated');
+    }
+
     // Validate request
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -395,7 +401,7 @@ export const updateAsset = async (req: Request, res: Response) => {
     const asset = await assetService.updateAsset(
       req.params.id,
       req.body,
-      req.user.id // Pass the user ID for updatedBy
+      req.user._id // Use _id instead of id to match the type definition
     );
 
     if (!asset) {

@@ -389,12 +389,8 @@ const assetSchema = new Schema<IAsset>(
     toJSON: { 
       virtuals: true,
       transform: function(doc, ret) {
-        // Create a new object to avoid modifying the original
-        const transformed = { ...ret };
-        
-        // Remove internal fields
-        delete transformed.__v;
-        delete transformed._id;
+        // Use destructuring to exclude internal fields
+        const { __v, _id, ...transformed } = ret;
         
         // Convert ObjectId to string for nested documents
         if (transformed.company && typeof transformed.company === 'object') {
@@ -416,12 +412,8 @@ const assetSchema = new Schema<IAsset>(
     toObject: { 
       virtuals: true,
       transform: function(doc, ret) {
-        // Create a new object to avoid modifying the original
-        const transformed = { ...ret };
-        
-        // Remove internal fields
-        delete transformed.__v;
-        delete transformed._id;
+        // Use destructuring to exclude internal fields
+        const { __v, _id, ...transformed } = ret;
         
         // Convert ObjectId to string for nested documents
         if (transformed.company && typeof transformed.company === 'object') {

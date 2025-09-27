@@ -876,6 +876,66 @@ export const updateBoardMember = async (
 };
 
 /**
+ * Remove a board member from a company
+ */
+export const removeBoardMember = async (
+  companyId: string,
+  memberId: string,
+  userId: string
+): Promise<ICompany | null> => {
+  if (!Types.ObjectId.isValid(companyId) || !Types.ObjectId.isValid(memberId)) {
+    throw new BadRequestError('Invalid company or member ID');
+  }
+
+  const session = await startSession();
+  session.startTransaction();
+
+  try {
+    // First, check if the company exists
+    const company = await Company.findById(companyId).session(session);
+    if (!company) {
+      throw new NotFoundError('Company not found');
+    }
+
+    // Check if the member exists
+    const memberExists = company.boardMembers.some(
+      member => member._id?.toString() === memberId
+    );
+    
+    if (!memberExists) {
+      throw new NotFoundError('Board member not found');
+    }
+
+    // Remove the board member
+    const updatedCompany = await Company.findByIdAndUpdate(
+      companyId,
+      {
+        $pull: { boardMembers: { _id: memberId } },
+        $set: { 
+          updatedAt: new Date(),
+          updatedBy: new Types.ObjectId(userId)
+        }
+      },
+      { new: true, session }
+    )
+    .populate('updatedBy', 'name email')
+    .session(session);
+
+    if (!updatedCompany) {
+      throw new Error('Failed to remove board member');
+    }
+
+    await session.commitTransaction();
+    return updatedCompany;
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    await session.endSession();
+  }
+};
+
+/**
  * Remove a bank account from a company
  */
 export const removeBankAccount = async (
@@ -986,6 +1046,63 @@ export const verifyBankAccount = async (
 
     await session.commitTransaction();
     return updatedCompany;
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    await session.endSession();
+  }
+};
+
+/**
+ * Add a legal advisor to a company
+ */
+export const addLegalAdvisor = async (
+  companyId: string,
+  data: Omit<ILegalAdvisor, 'createdAt' | 'updatedAt' | '_id'>,
+  userId: string
+): Promise<ICompany | null> => {
+  if (!Types.ObjectId.isValid(companyId)) {
+    throw new BadRequestError('Invalid company ID');
+  }
+
+  const session = await startSession();
+  session.startTransaction();
+
+  try {
+    const company = await Company.findById(companyId).session(session);
+    if (!company) {
+      throw new NotFoundError('Company not found');
+    }
+
+    // Create new legal advisor with required fields
+    const newAdvisor: ILegalAdvisor = {
+      ...data,
+      updatedAt: new Date(),
+      updatedBy: new Types.ObjectId(userId),
+      documents: data.documents || []
+    };
+
+    // Add to company's legalAdvisors array
+    company.legalAdvisors.push(newAdvisor);
+    
+    // If this is the first advisor or marked as primary, ensure only one primary
+    if (newAdvisor.isPrimary) {
+      company.legalAdvisors.forEach(advisor => {
+        if (advisor._id !== newAdvisor._id) {
+          advisor.isPrimary = false;
+        }
+      });
+    }
+
+    await company.save({ session });
+    await session.commitTransaction();
+    
+    // Return the updated company
+    return company.populate([
+      { path: 'legalAdvisors.updatedBy', select: 'name email' },
+      { path: 'legalAdvisors.documents.uploadedBy', select: 'name email' }
+    ]);
   } catch (error) {
     await session.abortTransaction();
     throw error;
@@ -1216,19 +1333,30 @@ export const getCompanyStats = async (companyId: string): Promise<{
     activeAssets,
     totalInvestments,
     totalInvestors,
-    documentsByType,
+    _unusedDocuments, // This was unused, we'll calculate documents below
   ] = await Promise.all([
     // Replace with actual queries
     Promise.resolve(0), // Total assets
     Promise.resolve(0), // Active assets
     Promise.resolve(0), // Total investments
     Promise.resolve(0), // Total investors
-    Promise.resolve([]), // Documents by type
+    Promise.resolve([]), // This is now unused, but kept for Promise.all structure
   ]);
   
-  // Calculate document stats
-  const totalDocuments = company.documents?.length || 0;
-  
+  // Calculate document stats from all sources
+  const allDocuments = [
+    ...(company.bankAccounts?.flatMap(acc => acc.documents || []) || []),
+    ...(company.legalAdvisors?.flatMap(advisor => advisor.documents || []) || []),
+    ...(company.boardMembers?.flatMap(member => member.documents || []) || [])
+  ];
+
+  // Group documents by type
+  const documentsByType = allDocuments.reduce((acc, doc) => {
+    if (!doc.type) return acc;
+    acc[doc.type] = (acc[doc.type] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
   // Calculate bank account stats
   const bankAccounts = {
     total: company.bankAccounts?.length || 0,
@@ -1249,8 +1377,8 @@ export const getCompanyStats = async (companyId: string): Promise<{
     totalInvestments,
     totalInvestors,
     documents: {
-      total: totalDocuments,
-      byType: documentsByType,
+      total: allDocuments.length,
+      byType: Object.entries(documentsByType).map(([type, count]) => ({ _id: type, count })),
     },
     bankAccounts,
     team,

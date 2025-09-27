@@ -200,7 +200,7 @@ export const deleteCompany = async (req: Request, res: Response, next: NextFunct
       throw new ForbiddenError();
     }
     
-    const deleted = await companyService.deleteCompany(req.params.id);
+    const deleted = await companyService.deleteCompany(req.params.id, userId);
     if (!deleted) {
       throw new Error('Failed to delete company');
     }
@@ -416,10 +416,9 @@ export const uploadDocument = async (req: Request, res: Response, next: NextFunc
       name: req.file.originalname,
       type: req.file.mimetype.startsWith('image/') ? 'image' : 'document',
       url: req.file.path,
-      fileType: req.file.mimetype,
-      fileSize: req.file.size,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
       uploadedBy: req.user?.id,
-      isVerified: false,
       uploadedAt: new Date(),
     };
 
