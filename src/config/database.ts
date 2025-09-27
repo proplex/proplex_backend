@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import { logger } from '@/utils/logger';
 
 dotenv.config();
 
@@ -8,9 +9,10 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/prople
 const connectDB = async (): Promise<void> => {
   try {
     const conn = await mongoose.connect(MONGODB_URI);
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
-  } catch (error) {
-    console.error(`Error: ${error.message}`);
+    logger.info(`MongoDB Connected: ${conn.connection.host}`);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown database error';
+    console.error(`Database connection error: ${errorMessage}`);
     process.exit(1);
   }
 };
