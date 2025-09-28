@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { body, param, query } from 'express-validator';
-import { validateRequest, requireAuth, requireRole } from '@/middlewares';
+import { validateRequest, requireRole } from '@/middlewares';
+import { web3Auth } from '@/utils/jwt';
 import * as companyController from '@/controllers/company.controller';
 import { UserRole, IUser } from '@/models/user.model';
 import { Types } from 'mongoose';
@@ -46,8 +47,8 @@ const asyncHandler = <T = any>(
 
 const router = Router();
 
-// Apply authentication middleware to all routes
-router.use(requireAuth);
+// Apply Web3Auth authentication middleware to all routes
+router.use(web3Auth);
 
 // Role-based access control
 const requireCompanyAdmin = requireRole([UserRole.ADMIN, UserRole.COMPANY_ADMIN]);

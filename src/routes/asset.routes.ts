@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { body, param, query } from 'express-validator';
-import { validateRequest, requireAuth, requireRole } from '@/middlewares';
+import { validateRequest, requireRole } from '@/middlewares';
+import { web3Auth } from '@/utils/jwt';
 import * as assetController from '@/controllers/asset.controller';
 import { AssetStatus, AssetType, OwnershipType, IAsset } from '@/models/asset.model';
 import { UserRole, IUser } from '@/models/user.model';
@@ -27,8 +28,8 @@ type ApiResponse<T = any> = AssetResponse<T>;
 
 const router = Router();
 
-// Apply authentication middleware to all routes
-router.use(requireAuth);
+// Apply Web3Auth authentication middleware to all routes
+router.use(web3Auth);
 
 // Role-based access control
 const requireAssetManagement = requireRole([UserRole.ADMIN, UserRole.COMPANY_ADMIN]);

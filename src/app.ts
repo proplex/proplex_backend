@@ -6,6 +6,9 @@ import compression from 'compression';
 import dotenv from 'dotenv';
 import companyRoutes from '@/routes/company.routes';
 import assetRoutes from '@/routes/asset.routes';
+import { orderRoutes } from '@/routes/order.routes';
+import { investorRoutes } from '@/routes/investor.routes';
+import { walletRoutes } from '@/routes/wallet.routes';
 import { errorHandler } from '@/middlewares/error.middleware';
 
 dotenv.config();
@@ -41,6 +44,9 @@ class App {
     // API routes
     this.app.use('/api/companies', companyRoutes);
     this.app.use('/api/assets', assetRoutes);
+    this.app.use('/api/orders', orderRoutes);
+    this.app.use('/api/investments', investorRoutes);
+    this.app.use('/api/wallet', walletRoutes);
 
     // Handle 404
     this.app.use((req: Request, res: Response) => {

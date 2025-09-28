@@ -1,17 +1,20 @@
 import { Request, Response, NextFunction } from 'express';
 import { NotAuthorizedError } from '@/errors/not-authorized-error';
 import { UserRole } from '@/models/user.model';
+import { web3Auth } from '@/utils/jwt';
 
-export const requireAuth = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  if (!req.user) {
-    throw new NotAuthorizedError('Authentication required');
+export const requireAuth = [
+  // First try Web3Auth
+  web3Auth,
+  
+  // If Web3Auth fails, try traditional session auth
+  (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      throw new NotAuthorizedError('Authentication required');
+    }
+    next();
   }
-  next();
-};
+];
 
 export const requireAdmin = [
   requireAuth,
