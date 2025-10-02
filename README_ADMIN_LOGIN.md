@@ -4,7 +4,7 @@
 This document explains how to use the admin login and registration functionality in the ProPlex backend.
 
 ## Admin Credentials
-- Email: proplex@gmail.com
+- Email: everythinggaurav48@gmail.com
 - Password: Abcd@1234
 
 ## Endpoints
@@ -17,7 +17,7 @@ Registers the admin user in the database.
 **Request Body:**
 ```json
 {
-  "email": "proplex@gmail.com",
+  "email": "everythinggaurav48@gmail.com",
   "password": "Abcd@1234"
 }
 ```
@@ -29,7 +29,7 @@ Registers the admin user in the database.
   "message": "Admin user created/updated successfully",
   "user": {
     "id": "user_id",
-    "email": "proplex@gmail.com",
+    "email": "everythinggaurav48@gmail.com",
     "firstName": "Admin",
     "lastName": "User",
     "role": "admin"
@@ -45,7 +45,7 @@ Authenticates the admin user and returns a JWT token.
 **Request Body:**
 ```json
 {
-  "email": "proplex@gmail.com",
+  "email": "everythinggaurav48@gmail.com",
   "password": "Abcd@1234"
 }
 ```
@@ -57,11 +57,29 @@ Authenticates the admin user and returns a JWT token.
   "token": "jwt_token",
   "user": {
     "id": "user_id",
-    "email": "proplex@gmail.com",
+    "email": "everythinggaurav48@gmail.com",
     "firstName": "Admin",
     "lastName": "User",
     "role": "admin"
   }
+}
+```
+
+### Admin Logout
+Logs out the admin user by invalidating the JWT token.
+
+**Endpoint:** `POST /api/admin/logout`
+
+**Headers:**
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Successfully logged out"
 }
 ```
 
@@ -71,43 +89,57 @@ Authenticates the admin user and returns a JWT token.
 
 1. **Register Admin User:**
 ```bash
-curl -X POST http://localhost:5000/api/admin/register \
+curl -X POST http://localhost:3001/api/admin/register \
   -H "Content-Type: application/json" \
-  -d '{"email":"proplex@gmail.com","password":"Abcd@1234"}'
+  -d '{"email":"everythinggaurav48@gmail.com","password":"Abcd@1234"}'
 ```
 
 2. **Login as Admin:**
 ```bash
-curl -X POST http://localhost:5000/api/admin/login \
+curl -X POST http://localhost:3001/api/admin/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"proplex@gmail.com","password":"Abcd@1234"}'
+  -d '{"email":"everythinggaurav48@gmail.com","password":"Abcd@1234"}'
+```
+
+3. **Logout as Admin:**
+```bash
+curl -X POST http://localhost:3001/api/admin/logout \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your_jwt_token>"
 ```
 
 ### Using Postman
 
 1. **Register Admin User:**
    - Method: POST
-   - URL: http://localhost:5000/api/admin/register
+   - URL: http://localhost:3001/api/admin/register
    - Headers: Content-Type: application/json
    - Body (raw JSON):
    ```json
    {
-     "email": "proplex@gmail.com",
+     "email": "everythinggaurav48@gmail.com",
      "password": "Abcd@1234"
    }
    ```
 
 2. **Login as Admin:**
    - Method: POST
-   - URL: http://localhost:5000/api/admin/login
+   - URL: http://localhost:3001/api/admin/login
    - Headers: Content-Type: application/json
    - Body (raw JSON):
    ```json
    {
-     "email": "proplex@gmail.com",
+     "email": "everythinggaurav48@gmail.com",
      "password": "Abcd@1234"
    }
    ```
+
+3. **Logout as Admin:**
+   - Method: POST
+   - URL: http://localhost:3001/api/admin/logout
+   - Headers: 
+     - Content-Type: application/json
+     - Authorization: Bearer <your_jwt_token>
 
 ## Troubleshooting
 
@@ -137,23 +169,24 @@ The admin user is created in the database during registration but authentication
 
 ## Testing with the Debug Script
 
-You can also use the test script we created:
+You can also use the test scripts we created:
 
 1. Run the test server:
 ```bash
-node test-admin-routes.js
+npm run dev
 ```
 
-2. In another terminal, test the registration:
+2. Test the registration:
 ```bash
-curl -X POST http://localhost:3003/api/admin/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"proplex@gmail.com","password":"Abcd@1234"}'
+node test-admin-register.js
 ```
 
 3. Test the login:
 ```bash
-curl -X POST http://localhost:3003/api/admin/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"proplex@gmail.com","password":"Abcd@1234"}'
+node test-admin-login.js
+```
+
+4. Test the logout:
+```bash
+node test-admin-logout.js
 ```

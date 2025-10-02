@@ -51,6 +51,33 @@ interface RegisterResponse {
   };
 }
 
+interface LogoutResponse {
+  success: boolean;
+  message: string;
+}
+
+export const adminLogout = async (
+  req: Request,
+  res: Response<LogoutResponse>,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    console.log('=== Admin Logout Request ===');
+    
+    // For JWT tokens, logout is primarily handled client-side by removing the token
+    // Server-side, we can optionally add the token to a blacklist if implemented
+    // But for this implementation, we'll just send a success response
+    
+    res.status(200).json({
+      success: true,
+      message: 'Successfully logged out',
+    });
+  } catch (error) {
+    console.error('Error in adminLogout:', error);
+    next(error);
+  }
+};
+
 export const adminLogin = async (
   req: Request<{}, {}, LoginRequest>,
   res: Response<LoginResponse>,
