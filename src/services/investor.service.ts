@@ -1,14 +1,14 @@
 import { Types } from 'mongoose';
-import { IInvestor } from '@/models/investor.model';
+import { Investor } from '@/models/investor.model';
 import { ICompany } from '@/models/company.model';
-import Investor from '@/models/investor.model';
+import InvestorModel from '@/models/investor.model';
 import Company from '@/models/company.model';
 import { BaseService } from './base.service';
 import { BadRequestError, NotFoundError } from '@/errors';
 
-export class InvestorService extends BaseService<IInvestor> {
+export class InvestorService extends BaseService<Investor> {
   constructor() {
-    super(Investor);
+    super(InvestorModel);
   }
 
   async createInvestment(

@@ -2,47 +2,63 @@ import { Request, Response } from 'express';
 import { 
   NotFoundError, 
   BadRequestError, 
-  NotAuthorizedError 
+  UnauthorizedError 
 } from '@/errors';
-import Wallet, { 
+import { 
   TransactionType, 
   TransactionStatus,
   IWallet,
-  ITransaction
+  ITransaction,
+  WalletOwnerType,
+  WalletType,
+  AssetType
 } from '@/models/wallet.model';
-import { User } from '@/models/user.model';
+import { IUser } from '@/models/user.model';
 import { logger } from '@/utils/logger';
+import { WalletService } from '@/services/wallet.service';
+import User from '@/models/user.model';
+import { Types } from 'mongoose';
+
+const walletService = new WalletService();
 
 export const getWallet = async (req: Request, res: Response) => {
   const userId = req.user!.id;
   
-  const wallet = await Wallet.findOne({ 
-    user: userId,
-    isActive: true 
-  }).select('-transactions -__v');
-
-  if (!wallet) {
-    // Create wallet if it doesn't exist
-    const newWallet = await Wallet.create({
-      user: userId,
-      balance: 0,
-      currency: 'USD'
+  try {
+    // Try to find existing wallet
+    let wallet = await walletService.findOne({ 
+      ownerId: userId,
+      isActive: true 
     });
+
+    if (!wallet) {
+      // Create wallet if it doesn't exist
+      wallet = await walletService.getOrCreateWallet(
+        WalletOwnerType.USER,
+        userId,
+        {
+          type: AssetType.FIAT,
+          code: 'USD',
+          name: 'US Dollar',
+          decimals: 2,
+          isActive: true
+        },
+        WalletType.FIAT
+      );
+    }
     
-    return res.json({
+    // Cast wallet to IWallet to ensure proper typing
+    const typedWallet = wallet as IWallet;
+
+    res.json({
       status: 'success',
       data: {
-        wallet: newWallet
+        wallet
       }
     });
+  } catch (error) {
+    throw new BadRequestError('Failed to get or create wallet');
   }
-
-  res.json({
-    status: 'success',
-    data: {
-      wallet
-    }
-  });
 };
 
 export const getTransactions = async (req: Request, res: Response) => {
@@ -56,87 +72,66 @@ export const getTransactions = async (req: Request, res: Response) => {
     page = 1 
   } = req.query;
 
-  const query: any = { 
-    user: userId,
-    'transactions.0': { $exists: true } // Only wallets with transactions
-  };
+  try {
+    // Find wallet for user
+    const wallet = await walletService.findOne({ 
+      ownerId: userId,
+      isActive: true 
+    });
 
-  // Build match query for transactions
-  const transactionsMatch: any = {};
-  
-  if (type) {
-    transactionsMatch['transactions.type'] = type;
-  }
-  
-  if (status) {
-    transactionsMatch['transactions.status'] = status;
-  }
-  
-  if (startDate || endDate) {
-    transactionsMatch['transactions.createdAt'] = {};
-    if (startDate) {
-      transactionsMatch['transactions.createdAt'].$gte = new Date(startDate as string);
+    if (!wallet) {
+      return res.json({
+        status: 'success',
+        data: {
+          transactions: [],
+          total: 0,
+          pages: 0,
+          page: 1
+        }
+      });
     }
-    if (endDate) {
-      transactionsMatch['transactions.createdAt'].$lte = new Date(endDate as string);
+
+    // Apply filters and pagination in memory (for embedded documents)
+    let transactions: any[] = wallet.transactions || [];
+    
+    if (type) {
+      transactions = transactions.filter((tx: ITransaction) => tx.type === type);
     }
-  }
+    
+    if (status) {
+      transactions = transactions.filter((tx: ITransaction) => tx.status === status);
+    }
+    
+    if (startDate || endDate) {
+      const start = startDate ? new Date(startDate as string) : new Date(0);
+      const end = endDate ? new Date(endDate as string) : new Date();
+      
+      transactions = transactions.filter((tx: ITransaction) => {
+        const txDate = new Date(tx.createdAt);
+        return txDate >= start && txDate <= end;
+      });
+    }
 
-  const wallet = await Wallet.findOne(query)
-    .select('transactions')
-    .sort({ 'transactions.createdAt': -1 })
-    .lean();
+    // Apply pagination
+    const pageNum = parseInt(page as string, 10);
+    const limitNum = parseInt(limit as string, 10);
+    const startIndex = (pageNum - 1) * limitNum;
+    const endIndex = pageNum * limitNum;
+    
+    const paginatedTransactions = transactions.slice(startIndex, endIndex);
 
-  if (!wallet) {
-    return res.json({
+    res.json({
       status: 'success',
       data: {
-        transactions: [],
-        total: 0,
-        pages: 0,
-        page: 1
+        transactions: paginatedTransactions,
+        total: transactions.length,
+        pages: Math.ceil(transactions.length / limitNum),
+        page: pageNum
       }
     });
+  } catch (error) {
+    throw new BadRequestError('Failed to get transactions');
   }
-
-  // Apply filters and pagination in memory (for embedded documents)
-  let transactions = wallet.transactions;
-  
-  if (type) {
-    transactions = transactions.filter(tx => tx.type === type);
-  }
-  
-  if (status) {
-    transactions = transactions.filter(tx => tx.status === status);
-  }
-  
-  if (startDate || endDate) {
-    const start = startDate ? new Date(startDate as string) : new Date(0);
-    const end = endDate ? new Date(endDate as string) : new Date();
-    
-    transactions = transactions.filter(tx => {
-      const txDate = new Date(tx.createdAt);
-      return txDate >= start && txDate <= end;
-    });
-  }
-
-  // Apply pagination
-  const pageNum = parseInt(page as string, 10);
-  const limitNum = parseInt(limit as string, 10);
-  const startIndex = (pageNum - 1) * limitNum;
-  const endIndex = pageNum * limitNum;
-  
-  const paginatedTransactions = transactions.slice(startIndex, endIndex);
-
-  res.json({
-    status: 'success',
-    data: {
-      transactions: paginatedTransactions,
-      total: transactions.length,
-      pages: Math.ceil(transactions.length / limitNum),
-      page: pageNum
-    }
-  });
 };
 
 export const depositFunds = async (req: Request, res: Response) => {
@@ -147,24 +142,42 @@ export const depositFunds = async (req: Request, res: Response) => {
     throw new BadRequestError('Invalid amount');
   }
 
-  const transaction = await Wallet.processTransaction(
-    userId,
-    amount,
-    TransactionType.DEPOSIT,
-    description || 'Wallet deposit',
-    {
-      ip: req.ip,
-      userAgent: req.get('user-agent'),
-      ...req.body.metadata
-    }
-  );
+  try {
+    // Find wallet for user
+    const wallet = await walletService.findOne({ 
+      ownerId: userId,
+      isActive: true 
+    });
 
-  res.status(201).json({
-    status: 'success',
-    data: {
-      transaction
+    if (!wallet) {
+      throw new NotFoundError('Wallet not found');
     }
-  });
+    
+    // Cast wallet to IWallet to ensure proper typing
+    const typedWallet = wallet as IWallet;
+
+    const transaction = await walletService.processTransaction(
+      (typedWallet._id as any).toString(),
+      userId,
+      amount,
+      TransactionType.DEPOSIT,
+      description || 'Wallet deposit',
+      {
+        ip: req.ip,
+        userAgent: req.get('user-agent'),
+        ...req.body.metadata
+      }
+    );
+
+    res.status(201).json({
+      status: 'success',
+      data: {
+        transaction
+      }
+    });
+  } catch (error) {
+    throw new BadRequestError('Failed to process deposit');
+  }
 };
 
 export const withdrawFunds = async (req: Request, res: Response) => {
@@ -175,24 +188,42 @@ export const withdrawFunds = async (req: Request, res: Response) => {
     throw new BadRequestError('Invalid amount');
   }
 
-  const transaction = await Wallet.processTransaction(
-    userId,
-    amount,
-    TransactionType.WITHDRAWAL,
-    description || 'Withdrawal request',
-    {
-      ip: req.ip,
-      userAgent: req.get('user-agent'),
-      ...req.body.metadata
-    }
-  );
+  try {
+    // Find wallet for user
+    const wallet = await walletService.findOne({ 
+      ownerId: userId,
+      isActive: true 
+    });
 
-  res.status(201).json({
-    status: 'success',
-    data: {
-      transaction
+    if (!wallet) {
+      throw new NotFoundError('Wallet not found');
     }
-  });
+    
+    // Cast wallet to IWallet to ensure proper typing
+    const typedWallet = wallet as IWallet;
+
+    const transaction = await walletService.processTransaction(
+      (typedWallet._id as any).toString(),
+      userId,
+      amount,
+      TransactionType.WITHDRAWAL,
+      description || 'Withdrawal request',
+      {
+        ip: req.ip,
+        userAgent: req.get('user-agent'),
+        ...req.body.metadata
+      }
+    );
+
+    res.status(201).json({
+      status: 'success',
+      data: {
+        transaction
+      }
+    });
+  } catch (error) {
+    throw new BadRequestError('Failed to process withdrawal');
+  }
 };
 
 export const transferFunds = async (req: Request, res: Response) => {
@@ -217,40 +248,22 @@ export const transferFunds = async (req: Request, res: Response) => {
     throw new NotFoundError('Recipient not found');
   }
 
-  const session = await Wallet.startSession();
-  session.startTransaction();
-
   try {
-    // Process withdrawal from sender
-    const withdrawalTx = await Wallet.processTransaction(
+    // Process transfer using wallet service
+    const result = await walletService.transferFunds(
       senderId,
+      recipientId,
       amount,
-      TransactionType.TRANSFER,
+      senderId,
       `Transfer to ${recipient.email || recipient.id}`,
       {
         ip: req.ip,
         userAgent: req.get('user-agent'),
-        recipient: recipient.id,
         ...req.body.metadata
       }
     );
 
-    // Process deposit to recipient
-    const depositTx = await Wallet.processTransaction(
-      recipientId,
-      amount,
-      TransactionType.TRANSFER,
-      `Transfer from ${req.user!.email || req.user!.id}`,
-      {
-        ip: req.ip,
-        userAgent: req.get('user-agent'),
-        sender: senderId,
-        ...req.body.metadata
-      }
-    );
-
-    await session.commitTransaction();
-    session.endSession();
+    const { senderTx: withdrawalTx, recipientTx: depositTx } = result;
 
     res.status(201).json({
       status: 'success',
@@ -260,8 +273,6 @@ export const transferFunds = async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
     throw error;
   }
 };
@@ -270,7 +281,7 @@ export const transferFunds = async (req: Request, res: Response) => {
 export const adminGetUserWallet = async (req: Request, res: Response) => {
   const { userId } = req.params;
 
-  const wallet = await Wallet.findOne({ user: userId });
+  const wallet = await walletService.findOne({ ownerId: userId });
   
   if (!wallet) {
     throw new NotFoundError('Wallet not found');
@@ -296,11 +307,21 @@ export const adminUpdateWalletBalance = async (req: Request, res: Response) => {
     throw new BadRequestError('Invalid amount');
   }
 
+  // Find wallet for user
+  const wallet = await walletService.findOne({ ownerId: userId });
+  if (!wallet) {
+    throw new NotFoundError('Wallet not found');
+  }
+  
+  // Cast wallet to IWallet to ensure proper typing
+  const typedWallet = wallet as IWallet;
+
   const transactionType = type === 'add' 
     ? TransactionType.BONUS 
     : TransactionType.COMMISSION;
 
-  const transaction = await Wallet.processTransaction(
+  const transaction = await walletService.processTransaction(
+    (typedWallet._id as any).toString(),
     userId,
     amount,
     transactionType,

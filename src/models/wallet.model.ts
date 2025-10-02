@@ -155,14 +155,12 @@ const transactionSchema = new Schema<ITransaction>(
     wallet: {
       type: Schema.Types.ObjectId,
       ref: 'Wallet',
-      required: true,
-      index: true
+      required: true
     },
     user: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
-      index: true
+      required: true
     },
     type: {
       type: String,
@@ -172,8 +170,7 @@ const transactionSchema = new Schema<ITransaction>(
     status: {
       type: String,
       enum: Object.values(TransactionStatus),
-      default: TransactionStatus.PENDING,
-      index: true
+      default: TransactionStatus.PENDING
     },
     amount: {
       type: Number,
@@ -200,17 +197,55 @@ const transactionSchema = new Schema<ITransaction>(
       },
       decimals: {
         type: Number,
-        required: [true, 'Asset decimals are required'],
+        required: [true, 'Asset decimals is required'],
         min: 0,
-        default: 8
+        max: 18
       },
       isActive: {
         type: Boolean,
         default: true
       },
       metadata: {
-        type: Schema.Types.Mixed,
-        default: {}
+        type: Schema.Types.Mixed
+      }
+    },
+    fee: {
+      amount: {
+        type: Number,
+        default: 0,
+        validate: {
+          validator: Number.isFinite,
+          message: 'Fee amount must be a valid number'
+        }
+      },
+      asset: {
+        type: {
+          type: String,
+          enum: Object.values(AssetType),
+          required: [true, 'Fee asset type is required']
+        },
+        code: {
+          type: String,
+          required: [true, 'Fee asset code is required'],
+          uppercase: true
+        },
+        name: {
+          type: String,
+          required: [true, 'Fee asset name is required']
+        },
+        decimals: {
+          type: Number,
+          required: [true, 'Fee asset decimals is required'],
+          min: 0,
+          max: 18
+        },
+        isActive: {
+          type: Boolean,
+          default: true
+        },
+        metadata: {
+          type: Schema.Types.Mixed
+        }
       }
     },
     balanceBefore: {
@@ -231,28 +266,28 @@ const transactionSchema = new Schema<ITransaction>(
     },
     reference: {
       type: String,
-      required: true,
-      unique: true,
-      index: true,
-      default: function() {
-        return `TX-${Date.now()}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
-      }
+      required: [true, 'Reference is required'],
+      index: true
     },
-    description: {
-      type: String
+    externalId: {
+      type: String,
+      index: true
     },
+    description: String,
     metadata: {
-      type: Schema.Types.Mixed,
-      default: {}
-    }
+      type: Schema.Types.Mixed
+    },
+    confirmedAt: Date,
+    processedAt: Date,
+    failedAt: Date
   },
   {
     timestamps: true,
     toJSON: {
       transform(doc, ret) {
         ret.id = ret._id;
-        delete ret._id;
-        delete ret.__v;
+        delete (ret as any)._id;
+        delete (ret as any).__v;
       }
     }
   }
@@ -261,29 +296,22 @@ const transactionSchema = new Schema<ITransaction>(
 const walletAddressSchema = new Schema<IWalletAddress>({
   address: {
     type: String,
-    required: [true, 'Wallet address is required'],
-    trim: true,
-    index: true
+    required: [true, 'Address is required'],
+    trim: true
   },
   network: {
     type: String,
     enum: Object.values(BlockchainNetwork),
-    required: [true, 'Blockchain network is required']
+    required: [true, 'Network is required']
   },
   isDefault: {
     type: Boolean,
     default: false
   },
-  label: {
-    type: String,
-    trim: true
-  },
-  verifiedAt: {
-    type: Date
-  },
+  label: String,
+  verifiedAt: Date,
   metadata: {
-    type: Schema.Types.Mixed,
-    default: {}
+    type: Schema.Types.Mixed
   }
 });
 
@@ -292,8 +320,7 @@ const walletSchema = new Schema<IWallet>(
     ownerType: {
       type: String,
       enum: Object.values(WalletOwnerType),
-      required: [true, 'Owner type is required'],
-      index: true
+      required: [true, 'Owner type is required']
     },
     ownerId: {
       type: Schema.Types.ObjectId,
@@ -303,15 +330,10 @@ const walletSchema = new Schema<IWallet>(
     type: {
       type: String,
       enum: Object.values(WalletType),
-      required: [true, 'Wallet type is required'],
-      index: true
+      required: [true, 'Wallet type is required']
     },
     addresses: [walletAddressSchema],
-    defaultAddress: {
-      type: String,
-      trim: true,
-      sparse: true
-    },
+    defaultAddress: String,
     asset: {
       type: {
         type: String,
@@ -329,54 +351,52 @@ const walletSchema = new Schema<IWallet>(
       },
       decimals: {
         type: Number,
-        required: [true, 'Asset decimals are required'],
+        required: [true, 'Asset decimals is required'],
         min: 0,
-        default: 8
+        max: 18
       },
       isActive: {
         type: Boolean,
         default: true
       },
       metadata: {
-        type: Schema.Types.Mixed,
-        default: {}
+        type: Schema.Types.Mixed
       }
     },
     balance: {
       type: Number,
-      required: true,
       default: 0,
-      min: 0
+      validate: {
+        validator: Number.isFinite,
+        message: 'Balance must be a valid number'
+      }
     },
     availableBalance: {
       type: Number,
-      required: true,
       default: 0,
-      min: 0
+      validate: {
+        validator: Number.isFinite,
+        message: 'Available balance must be a valid number'
+      }
     },
     lockedBalance: {
       type: Number,
-      required: true,
       default: 0,
-      min: 0
+      validate: {
+        validator: Number.isFinite,
+        message: 'Locked balance must be a valid number'
+      }
     },
-    label: {
-      type: String,
-      trim: true
-    },
+    label: String,
     isActive: {
       type: Boolean,
-      default: true
+      default: true,
+      index: true
     },
-    lastSyncedAt: {
-      type: Date
-    },
-    lastActivityAt: {
-      type: Date
-    },
+    lastSyncedAt: Date,
+    lastActivityAt: Date,
     metadata: {
-      type: Schema.Types.Mixed,
-      default: {}
+      type: Schema.Types.Mixed
     },
     transactions: [transactionSchema]
   },
@@ -385,169 +405,22 @@ const walletSchema = new Schema<IWallet>(
     toJSON: {
       transform(doc, ret) {
         ret.id = ret._id;
-        delete ret._id;
-        if (ret.__v !== undefined) {
-          delete ret.__v;
-        }
+        delete (ret as any)._id;
+        delete (ret as any).__v;
       }
     }
   }
 );
 
-// Indexes
-walletSchema.index({ ownerType: 1, ownerId: 1, type: 1, 'asset.code': 1 }, { unique: true });
-walletSchema.index({ 'addresses.address': 1 }, { unique: true, sparse: true });
+// Indexes for better query performance (removed duplicate indexes)
+walletSchema.index({ ownerId: 1, ownerType: 1 });
 walletSchema.index({ 'asset.code': 1 });
-walletSchema.index({ updatedAt: 1 });
+walletSchema.index({ 'addresses.address': 1 });
+walletSchema.index({ createdAt: -1 });
 
-/**
- * Get current wallet balance
- */
-walletSchema.methods.getBalance = async function(): Promise<number> {
-  return this.balance;
-};
-
-/**
- * Check if wallet has sufficient balance for withdrawal
- */
-walletSchema.methods.canWithdraw = async function(amount: number): Promise<boolean> {
-  return this.availableBalance >= amount;
-};
-
-/**
- * Generate a unique reference for transactions
- */
-walletSchema.methods.generateReference = function(): string {
-  return `TX-${Date.now()}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
-};
-
-/**
- * Add a new address to the wallet
- */
-walletSchema.methods.addAddress = function(addressData: Omit<IWalletAddress, 'isDefault'>): void {
-  // If this is the first address, set it as default
-  if (this.addresses.length === 0) {
-    this.addresses.push({ ...addressData, isDefault: true });
-    this.defaultAddress = addressData.address;
-  } else {
-    this.addresses.push({ ...addressData, isDefault: false });
-  }
-};
-
-/**
- * Set default address
- */
-walletSchema.methods.setDefaultAddress = function(address: string): void {
-  const addressToSet = this.addresses.find((a: IWalletAddress) => a.address === address);
-  if (!addressToSet) {
-    throw new Error('Address not found in wallet');
-  }
-  
-  // Reset existing default
-  this.addresses.forEach((a: IWalletAddress) => {
-    a.isDefault = false;
-  });
-  
-  // Set new default
-  addressToSet.isDefault = true;
-  this.defaultAddress = address;
-  this.markModified('addresses');
-};
-
-/**
- * Verify an address
- */
-walletSchema.methods.verifyAddress = function(address: string, verifiedAt: Date = new Date()): void {
-  const addressToVerify = this.addresses.find((a: IWalletAddress) => a.address === address);
-  if (!addressToVerify) {
-    throw new Error('Address not found in wallet');
-  }
-  
-  addressToVerify.verifiedAt = verifiedAt;
-  this.markModified('addresses');
-};
-
-/**
- * Process wallet transaction (deposit/withdraw)
- */
-walletSchema.statics.processTransaction = async function(
-  userId: string | Types.ObjectId,
-  amount: number,
-  type: TransactionType,
-  description?: string,
-  metadata: Record<string, any> = {}
-) {
-  if (amount <= 0) {
-    throw new Error('Amount must be greater than 0');
-  }
-
-  const session = await this.startSession();
-  session.startTransaction();
-
-  try {
-    // Find wallet and lock it for update
-    const wallet = await this.findOneAndUpdate(
-      { user: userId, isActive: true },
-      { $setOnInsert: { balance: 0, currency: 'USD' } },
-      { new: true, upsert: true, session }
-    ).select('+balance');
-
-    if (!wallet) {
-      throw new Error('Wallet not found or inactive');
-    }
-
-    // Calculate new balance
-    let newBalance = wallet.balance;
-    if (type === TransactionType.DEPOSIT || 
-        type === TransactionType.REFUND || 
-        type === TransactionType.BONUS) {
-      newBalance += amount;
-    } else {
-      if (wallet.balance < amount) {
-        throw new Error('Insufficient funds');
-      }
-      newBalance -= amount;
-    }
-
-    // Create transaction
-    const transaction = {
-      wallet: wallet._id,
-      user: wallet.user,
-      amount,
-      balance: newBalance,
-      type,
-      status: TransactionStatus.COMPLETED,
-      description,
-      metadata: {
-        ...metadata,
-        ip: metadata.ip,
-        userAgent: metadata.userAgent
-      }
-    };
-
-    // Update wallet balance and add transaction
-    wallet.balance = newBalance;
-    wallet.lastTransactionAt = new Date();
-    wallet.transactions.push(transaction);
-
-    await wallet.save({ session });
-    await session.commitTransaction();
-    session.endSession();
-
-    // Return the created transaction
-    const createdTransaction = wallet.transactions[wallet.transactions.length - 1];
-    return {
-      ...createdTransaction.toObject(),
-      wallet: wallet._id,
-      user: wallet.user
-    };
-  } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
-    throw error;
-  }
-};
+// Compound indexes for common queries
+walletSchema.index({ ownerId: 1, ownerType: 1, 'asset.code': 1 }, { unique: true });
 
 const Wallet = model<IWallet>('Wallet', walletSchema);
 
-export { Wallet, walletSchema };
+export default Wallet;

@@ -1,25 +1,26 @@
 import { Request, Response } from 'express';
-import { NotFoundError, BadRequestError, NotAuthorizedError } from '@/errors';
-import { Order, OrderStatus, OrderType } from '@/models/order.model';
-import { Asset } from '@/models/asset.model';
-import { User } from '@/models/user.model';
+import { NotFoundError, BadRequestError, UnauthorizedError } from '@/errors';
+import Order from '@/models/order.model';
+import Asset from '@/models/asset.model';
+import User from '@/models/user.model';
 import { logger } from '@/utils/logger';
+import { OrderStatus, OrderType } from '@/models/order.model';
 
 export const createOrder = async (req: Request, res: Response) => {
   const { assetId, quantity, price, type } = req.body;
   const userId = req.user!.id;
 
-  // Validate asset exists and is active
+  // Validate asset exists
   const asset = await Asset.findById(assetId);
-  if (!asset || !asset.isActive) {
-    throw new BadRequestError('Invalid or inactive asset');
+  if (!asset) {
+    throw new BadRequestError('Invalid asset');
   }
 
   // Calculate total amount
   const totalAmount = quantity * price;
 
   // Create order
-  const order = Order.build({
+  const order = new Order({
     user: userId,
     asset: assetId,
     quantity,

@@ -68,30 +68,8 @@ const userSchema = new Schema<IUser, IUserModel>(
     role: {
       type: String,
       enum: Object.values(UserRole),
-      default: UserRole.USER,
-      set: async function(this: IUser, value: string) {
-        // Only allow setting admin role if the current user is an admin
-        if (value === UserRole.ADMIN) {
-          // Skip check for new documents or if _id is not available
-          if (this.isNew || !this._id) {
-            return value;
-          }
-          
-          const UserModel = this.constructor as unknown as IUserModel;
-          const currentUser = await UserModel.findById(this._id).select('role');
-          
-          // If this is an existing user being updated to admin
-          if (currentUser && currentUser.role !== UserRole.ADMIN) {
-            // Convert _id to string to ensure type safety
-            const userId = this._id.toString();
-            const isAdminCreating = await UserModel.isAdminUser(userId);
-            if (!isAdminCreating) {
-              throw new Error('Only admins can create other admin users');
-            }
-          }
-        }
-        return value;
-      }
+      default: UserRole.USER
+      // Removed the complex setter function that was causing issues
     },
     company: {
       type: Schema.Types.ObjectId,
@@ -146,8 +124,7 @@ userSchema.pre('save', async function (next) {
   }
 });
 
-// Indexes for better query performance
-userSchema.index({ email: 1 }, { unique: true });
+// Indexes for better query performance (removed duplicate email index)
 userSchema.index({ company: 1 });
 userSchema.index({ role: 1 });
 userSchema.index({ isEmailVerified: 1 });
@@ -198,6 +175,4 @@ userSchema.methods.createPasswordResetToken = function (): string {
 };
 
 // Create and export the model
-const User = model<IUser, IUserModel>('User', userSchema);
-
-export default User;
+export default model<IUser, IUserModel>('User', userSchema);

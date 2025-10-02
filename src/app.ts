@@ -9,6 +9,7 @@ import assetRoutes from '@/routes/asset.routes';
 import { orderRoutes } from '@/routes/order.routes';
 import { investorRoutes } from '@/routes/investor.routes';
 import { walletRoutes } from '@/routes/wallet.routes';
+import adminRoutes from '@/routes/admin.routes';
 import { errorHandler } from '@/middlewares/error.middleware';
 
 dotenv.config();
@@ -42,6 +43,7 @@ class App {
     });
 
     // API routes
+    this.app.use('/api/admin', adminRoutes);
     this.app.use('/api/companies', companyRoutes);
     this.app.use('/api/assets', assetRoutes);
     this.app.use('/api/orders', orderRoutes);

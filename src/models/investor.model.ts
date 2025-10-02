@@ -2,7 +2,7 @@ import { Schema, model, Document, Types } from 'mongoose';
 import { IUser } from './user.model';
 import { ICompany } from './company.model';
 
-export interface IInvestor extends Document {
+export interface Investor extends Document {
   user: Types.ObjectId | IUser;
   company: Types.ObjectId | ICompany;
   investmentAmount: number;
@@ -15,19 +15,17 @@ export interface IInvestor extends Document {
   updatedAt: Date;
 }
 
-const investorSchema = new Schema<IInvestor>(
+const investorSchema = new Schema<Investor>(
   {
     user: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
-      index: true
+      required: true
     },
     company: {
       type: Schema.Types.ObjectId,
       ref: 'Company',
-      required: true,
-      index: true
+      required: true
     },
     investmentAmount: {
       type: Number,
@@ -50,8 +48,7 @@ const investorSchema = new Schema<IInvestor>(
     },
     isActive: {
       type: Boolean,
-      default: true,
-      index: true
+      default: true
     },
     investedAt: {
       type: Date,
@@ -70,8 +67,12 @@ const investorSchema = new Schema<IInvestor>(
     toJSON: {
       transform(doc, ret) {
         ret.id = ret._id;
-        delete ret._id;
-        delete ret.__v;
+        if ('_id' in ret) {
+          delete (ret as any)._id;
+        }
+        if ('__v' in ret) {
+          delete (ret as any).__v;
+        }
       }
     }
   }
@@ -83,11 +84,11 @@ investorSchema.index(
   { unique: true, partialFilterExpression: { isActive: true } }
 );
 
-// Indexes for common queries
+// Indexes for common queries (removed duplicate indexes)
 investorSchema.index({ user: 1, isActive: 1 });
 investorSchema.index({ company: 1, isActive: 1 });
 investorSchema.index({ investedAt: -1 });
 
-const Investor = model<IInvestor>('Investor', investorSchema);
+const Investor = model<Investor>('Investor', investorSchema);
 
 export default Investor;

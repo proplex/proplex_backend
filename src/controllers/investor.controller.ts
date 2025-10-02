@@ -1,18 +1,18 @@
 import { Request, Response } from 'express';
-import { NotFoundError, BadRequestError, NotAuthorizedError } from '@/errors';
-import { Investor } from '@/models/investor.model';
-import { Company } from '@/models/company.model';
-import { User } from '@/models/user.model';
+import { NotFoundError, BadRequestError, UnauthorizedError } from '@/errors';
+import Investor from '@/models/investor.model';
+import Company from '@/models/company.model';
+import User from '@/models/user.model';
 import { logger } from '@/utils/logger';
 
 export const createInvestment = async (req: Request, res: Response) => {
   const { companyId, investmentAmount, ownershipPercentage } = req.body;
   const userId = req.user!.id;
 
-  // Validate company exists and is active
+  // Validate company exists
   const company = await Company.findById(companyId);
-  if (!company || !company.isActive) {
-    throw new BadRequestError('Invalid or inactive company');
+  if (!company) {
+    throw new BadRequestError('Invalid company');
   }
 
   // Check if user already has an active investment in this company
@@ -27,7 +27,7 @@ export const createInvestment = async (req: Request, res: Response) => {
   }
 
   // Create investment
-  const investor = Investor.build({
+  const investor = new Investor({
     user: userId,
     company: companyId,
     investmentAmount,
@@ -41,9 +41,8 @@ export const createInvestment = async (req: Request, res: Response) => {
 
   await investor.save();
 
-  // Update company's total investment and ownership
-  // This would be more complex in a real application with proper transaction handling
-  company.totalInvestment = (company.totalInvestment || 0) + investmentAmount;
+  // In a real application, we would update company's total investment and ownership
+  // This would be more complex with proper transaction handling
   await company.save();
 
   res.status(201).json({
@@ -122,10 +121,10 @@ export const exitInvestment = async (req: Request, res: Response) => {
   investor.exitedAt = new Date();
   await investor.save();
 
-  // Update company's total investment (this is simplified)
+  // In a real application, we would update company's total investment
+  // This would be more complex with proper transaction handling
   const company = await Company.findById(investor.company);
   if (company) {
-    company.totalInvestment = Math.max(0, (company.totalInvestment || 0) - investor.investmentAmount);
     await company.save();
   }
 

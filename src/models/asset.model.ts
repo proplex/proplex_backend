@@ -202,16 +202,14 @@ const tokenSchema = new Schema<IToken>({
   tokenTicker: {
     type: String,
     required: [true, 'Token ticker is required'],
-    uppercase: true,
-    minlength: 1,
-    maxlength: 10,
+    maxlength: [10, 'Token ticker cannot exceed 10 characters']
   },
   tokenStandard: {
     type: String,
     required: [true, 'Token standard is required'],
     enum: Object.values(TokenStandard),
   },
-  smartContractAddress: { type: String, trim: true },
+  smartContractAddress: { type: String }
 });
 
 const mediaSchema = new Schema<IMedia>({
@@ -219,310 +217,138 @@ const mediaSchema = new Schema<IMedia>({
   type: {
     type: String,
     required: [true, 'Media type is required'],
-    enum: ['image', 'video', 'document'],
+    enum: ['image', 'video', 'document']
   },
   title: { type: String, required: [true, 'Media title is required'] },
   isFeatured: { type: Boolean, default: false },
-  uploadedAt: { type: Date, default: Date.now },
+  uploadedAt: { type: Date, default: Date.now }
 });
-
-const textIndexFields = {
-  name: 'text',
-  description: 'text',
-  'address.street': 'text',
-  'address.city': 'text',
-  'address.state': 'text',
-  'address.country': 'text',
-  tags: 'text',
-  features: 'text',
-  amenities: 'text'
-};
 
 const assetSchema = new Schema<IAsset>(
   {
-    // Basic Information
     name: {
       type: String,
       required: [true, 'Asset name is required'],
       trim: true,
       maxlength: [200, 'Asset name cannot exceed 200 characters'],
-      index: 'text'
+      index: 'text' // For text search
     },
     description: {
       type: String,
       trim: true,
-      maxlength: [5000, 'Description cannot exceed 5000 characters'],
+      maxlength: [5000, 'Description cannot exceed 5000 characters']
     },
     company: {
       type: Schema.Types.ObjectId,
       ref: 'Company',
       required: [true, 'Company is required'],
-      index: true
+      index: true // Index for queries
     },
     assetType: {
       type: String,
-      enum: Object.values(AssetType),
       required: [true, 'Asset type is required'],
-      index: true
+      enum: Object.values(AssetType),
+      index: true // Index for queries
     },
     ownershipType: {
       type: String,
-      enum: ['freehold', 'leasehold', 'cooperative', 'condominium', 'other'],
       required: [true, 'Ownership type is required'],
+      enum: Object.values(OwnershipType)
     },
     status: {
       type: String,
-      enum: ['draft', 'pending_review', 'published', 'rejected', 'archived'],
-      default: 'draft',
+      required: [true, 'Status is required'],
+      enum: Object.values(AssetStatus),
+      default: AssetStatus.DRAFT,
+      index: true // Index for queries
     },
     
     // Location Information
     address: {
-      street: { type: String, required: [true, 'Street address is required'] },
-      city: { type: String, required: [true, 'City is required'] },
-      state: { type: String, required: [true, 'State is required'] },
-      country: { type: String, required: [true, 'Country is required'] },
-      postalCode: { type: String, required: [true, 'Postal code is required'] },
-      coordinates: {
-        type: [Number], // [longitude, latitude]
-        index: '2dsphere',
-      },
+      type: addressSchema,
+      required: [true, 'Address is required']
     },
     
     // Financial Information
     valuation: {
-      currentValue: { type: Number, required: [true, 'Current value is required'], min: 0 },
-      purchasePrice: { type: Number, required: [true, 'Purchase price is required'], min: 0 },
-      purchaseDate: { type: Date, required: [true, 'Purchase date is required'] },
-      annualAppreciationRate: { type: Number, min: 0, max: 100 },
-      currency: { type: String, default: 'USD' },
+      type: valuationSchema,
+      required: [true, 'Valuation is required']
     },
     
     // Physical Characteristics
     size: {
-      totalArea: { type: Number, required: [true, 'Total area is required'], min: 0 },
-      builtUpArea: { type: Number, min: 0 },
-      plotArea: { type: Number, min: 0 },
-      floors: { type: Number, min: 0 },
-      units: { type: Number, min: 0 },
-      yearBuilt: { type: Number, min: 1800, max: new Date().getFullYear() },
+      type: sizeSchema,
+      required: [true, 'Size is required']
     },
     
     // Investment Details
     investment: {
-      targetAmount: { type: Number, required: [true, 'Target amount is required'], min: 0 },
-      minimumInvestment: { type: Number, required: [true, 'Minimum investment is required'], min: 0 },
-      expectedROI: { type: Number, min: 0, max: 1000 },
-      holdingPeriod: { type: Number, min: 1 }, // in months
-      distributionFrequency: {
-        type: String,
-        enum: ['monthly', 'quarterly', 'annually'],
-        default: 'quarterly',
-      },
+      type: investmentSchema,
+      required: [true, 'Investment details are required']
     },
     
     // Token Information
     token: {
-      totalSupply: { type: Number, required: [true, 'Total token supply is required'], min: 0 },
-      tokenPrice: { type: Number, required: [true, 'Token price is required'], min: 0 },
-      tokenTicker: { 
-        type: String, 
-        required: [true, 'Token ticker is required'],
-        uppercase: true,
-        maxlength: [10, 'Token ticker cannot exceed 10 characters'],
-      },
-      tokenStandard: {
-        type: String,
-        enum: ['ERC20', 'BEP20', 'other'],
-        default: 'ERC20',
-      },
-      smartContractAddress: {
-        type: String,
-        validate: {
-          validator: function(v: string) {
-            // Basic Ethereum address validation
-            return !v || /^0x[a-fA-F0-9]{40}$/.test(v);
-          },
-          message: (props: any) => `${props.value} is not a valid smart contract address`,
-        },
-      },
+      type: tokenSchema,
+      required: [true, 'Token information is required']
     },
     
     // Media and Documents
-    media: [{
-      url: { type: String, required: true },
-      type: { 
-        type: String, 
-        enum: ['image', 'video', 'document'],
-        required: true,
-      },
-      title: { type: String, required: [true, 'Media title is required'] },
-      isFeatured: { type: Boolean, default: false },
-      uploadedAt: { type: Date, default: Date.now },
-    }],
+    media: [mediaSchema],
     
     // Additional Metadata
     features: [{ type: String }],
     amenities: [{ type: String }],
-    tags: [{ type: String }],
+    tags: [{ type: String, index: true }], // Index for tag-based queries
     
     // System Fields
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: [true, 'Creator is required'],
-      index: true
+      required: [true, 'Creator is required']
     },
     updatedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: 'User'
     },
     approvedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: 'User'
     },
-    approvedAt: Date,
-    rejectionReason: String,
+    approvedAt: {
+      type: Date
+    },
+    rejectionReason: {
+      type: String
+    }
   },
   {
     timestamps: true,
-    toJSON: { 
-      virtuals: true,
-      transform: function(doc, ret) {
-        // Use destructuring to exclude internal fields
-        const { __v, _id, ...transformed } = ret;
-        
-        // Convert ObjectId to string for nested documents
-        if (transformed.company && typeof transformed.company === 'object') {
-          transformed.company = (transformed.company as any)._id?.toString() || transformed.company;
+    toJSON: {
+      transform(doc, ret) {
+        ret.id = ret._id;
+        if ('_id' in ret) {
+          delete (ret as any)._id;
         }
-        if (transformed.createdBy && typeof transformed.createdBy === 'object') {
-          transformed.createdBy = (transformed.createdBy as any)._id?.toString() || transformed.createdBy;
+        if ('__v' in ret) {
+          delete (ret as any).__v;
         }
-        if (transformed.updatedBy && typeof transformed.updatedBy === 'object') {
-          transformed.updatedBy = (transformed.updatedBy as any)._id?.toString() || transformed.updatedBy;
-        }
-        if (transformed.approvedBy && typeof transformed.approvedBy === 'object') {
-          transformed.approvedBy = (transformed.approvedBy as any)._id?.toString() || transformed.approvedBy;
-        }
-        
-        return transformed;
-      },
-    },
-    toObject: { 
-      virtuals: true,
-      transform: function(doc, ret) {
-        // Use destructuring to exclude internal fields
-        const { __v, _id, ...transformed } = ret;
-        
-        // Convert ObjectId to string for nested documents
-        if (transformed.company && typeof transformed.company === 'object') {
-          transformed.company = (transformed.company as any)._id?.toString() || transformed.company;
-        }
-        if (transformed.createdBy && typeof transformed.createdBy === 'object') {
-          transformed.createdBy = (transformed.createdBy as any)._id?.toString() || transformed.createdBy;
-        }
-        if (transformed.updatedBy && typeof transformed.updatedBy === 'object') {
-          transformed.updatedBy = (transformed.updatedBy as any)._id?.toString() || transformed.updatedBy;
-        }
-        if (transformed.approvedBy && typeof transformed.approvedBy === 'object') {
-          transformed.approvedBy = (transformed.approvedBy as any)._id?.toString() || transformed.approvedBy;
-        }
-        
-        return transformed;
-      },
-    },
+      }
+    }
   }
 );
 
-// Indexes for better query performance
-assetSchema.index({ company: 1 });
+// Indexes for better query performance (removed duplicate indexes)
+assetSchema.index({ company: 1, status: 1 });
+assetSchema.index({ assetType: 1, status: 1 });
+assetSchema.index({ 'investment.expectedROI': -1 });
+assetSchema.index({ 'valuation.currentValue': -1 });
+assetSchema.index({ createdAt: -1 });
 assetSchema.index({ 'address.coordinates': '2dsphere' });
-assetSchema.index({ status: 1 });
-assetSchema.index({ assetType: 1 });
-assetSchema.index({ 'valuation.currentValue': 1 });
-assetSchema.index({ 'investment.targetAmount': 1 });
-assetSchema.index({ 'token.tokenTicker': 1 }, { unique: true, sparse: true });
-assetSchema.index({ 'token.smartContractAddress': 1 }, { unique: true, sparse: true });
 
 // Text index for search
-assetSchema.index({
-  name: 'text',
-  description: 'text',
-  'address.street': 'text',
-  'address.city': 'text',
-  'address.state': 'text',
-  'address.country': 'text',
-  'tags': 'text',
-  'features': 'text',
-  'amenities': 'text'
-} as const);
+assetSchema.index({ name: 'text', description: 'text' });
 
-// Pre-save hook to validate data
-assetSchema.pre('save', function(next) {
-  // Validate that purchase date is not in the future
-  if (this.valuation?.purchaseDate && this.valuation.purchaseDate > new Date()) {
-    throw new Error('Purchase date cannot be in the future');
-  }
+const Asset = model<IAsset>('Asset', assetSchema);
 
-  // Validate that current value is not negative
-  if (this.valuation?.currentValue < 0) {
-    throw new Error('Current value cannot be negative');
-  }
-
-  next();
-});
-
-// Add text search method
-assetSchema.statics.textSearch = async function(query: string, filters: any = {}) {
-  return this.find(
-    { 
-      $text: { $search: query },
-      ...filters
-    },
-    { score: { $meta: 'textScore' } }
-  ).sort({ score: { $meta: 'textScore' } });
-};
-
-// Virtual for company details
-assetSchema.virtual('companyDetails', {
-  ref: 'Company',
-  localField: 'company',
-  foreignField: '_id',
-  justOne: true,
-});
-
-// Virtual for creator details
-assetSchema.virtual('creator', {
-  ref: 'User',
-  localField: 'createdBy',
-  foreignField: '_id',
-  justOne: true,
-});
-
-// Add text index for search
-assetSchema.index({
-  name: 'text',
-  description: 'text',
-  'address.street': 'text',
-  'address.city': 'text',
-  'address.state': 'text',
-  'address.country': 'text',
-  'token.tokenTicker': 'text',
-  features: 'text',
-  amenities: 'text',
-  tags: 'text',
-});
-
-// Pre-save hook to ensure at least one media is featured
-assetSchema.pre('save', function(next) {
-  if (this.media && this.media.length > 0) {
-    const hasFeatured = this.media.some(media => media.isFeatured);
-    if (!hasFeatured) {
-      this.media[0].isFeatured = true;
-    }
-  }
-  next();
-});
-
-export default model<IAsset>('Asset', assetSchema);
+export default Asset;

@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { body, param, query } from 'express-validator';
 import { validateRequest, requireRole } from '@/middlewares';
-import { web3Auth } from '@/utils/jwt';
+import { web3Auth, jwtAuth } from '@/utils/jwt';
 import * as companyController from '@/controllers/company.controller';
 import { UserRole, IUser } from '@/models/user.model';
 import { Types } from 'mongoose';
@@ -53,7 +53,6 @@ router.use(web3Auth);
 // Role-based access control
 const requireCompanyAdmin = requireRole([UserRole.ADMIN, UserRole.COMPANY_ADMIN]);
 const requireAdmin = requireRole([UserRole.ADMIN]);
-
 
 // Create a new company
 router.post(

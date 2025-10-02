@@ -34,14 +34,12 @@ const orderSchema = new Schema<IOrder>(
     user: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
-      index: true
+      required: true
     },
     asset: {
       type: Schema.Types.ObjectId,
       ref: 'Asset',
-      required: true,
-      index: true
+      required: true
     },
     quantity: {
       type: Number,
@@ -78,8 +76,7 @@ const orderSchema = new Schema<IOrder>(
     status: {
       type: String,
       enum: Object.values(OrderStatus),
-      default: OrderStatus.PENDING,
-      index: true
+      default: OrderStatus.PENDING
     },
     executedAt: {
       type: Date
@@ -97,14 +94,18 @@ const orderSchema = new Schema<IOrder>(
     toJSON: {
       transform(doc, ret) {
         ret.id = ret._id;
-        delete ret._id;
-        delete ret.__v;
+        if ('_id' in ret) {
+          delete (ret as any)._id;
+        }
+        if ('__v' in ret) {
+          delete (ret as any).__v;
+        }
       }
     }
   }
 );
 
-// Indexes
+// Indexes (removed duplicate indexes)
 orderSchema.index({ user: 1, status: 1 });
 orderSchema.index({ asset: 1, status: 1 });
 orderSchema.index({ createdAt: -1 });

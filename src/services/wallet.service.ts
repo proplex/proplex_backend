@@ -1,7 +1,6 @@
 import { Types, ClientSession, startSession } from 'mongoose';
 import { 
   IWallet, 
-  Wallet, 
   ITransaction, 
   TransactionType, 
   TransactionStatus, 
@@ -12,6 +11,7 @@ import {
   IAsset,
   AssetType
 } from '../models/wallet.model';
+import Wallet from '../models/wallet.model';
 import { BaseService } from './base.service';
 import { BadRequestError, NotFoundError } from '../errors';
 import { IUser } from '../models/user.model';

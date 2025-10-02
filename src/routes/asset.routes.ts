@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { body, param, query } from 'express-validator';
 import { validateRequest, requireRole } from '@/middlewares';
-import { web3Auth } from '@/utils/jwt';
+import { web3Auth, jwtAuth } from '@/utils/jwt';
 import * as assetController from '@/controllers/asset.controller';
 import { AssetStatus, AssetType, OwnershipType, IAsset } from '@/models/asset.model';
 import { UserRole, IUser } from '@/models/user.model';
@@ -33,6 +33,7 @@ router.use(web3Auth);
 
 // Role-based access control
 const requireAssetManagement = requireRole([UserRole.ADMIN, UserRole.COMPANY_ADMIN]);
+const requireAdmin = requireRole([UserRole.ADMIN]);
 
 // Type-safe async handler that works with AssetResponse
 const asyncHandler = <T = any>(
@@ -261,7 +262,7 @@ router.patch(
       .withMessage('Rejection reason is required when rejecting an asset'),
   ],
   validateRequest,
-  requireRole(['admin', 'moderator']),
+  requireAdmin,
   assetController.updateAssetStatus
 );
 
@@ -290,7 +291,7 @@ router.get(
     query('companyId').optional().isMongoId(),
   ],
   validateRequest,
-  requireRole(['admin']),
+  requireAdmin,
   assetController.getAssetStats
 );
 

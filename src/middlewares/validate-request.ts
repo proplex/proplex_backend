@@ -16,9 +16,15 @@ declare global {
   }
 }
 
-export const validateRequest = (validations: ValidationChain[]) => {
+export const validateRequest = (validations: ValidationChain[] | ((req: Request, res: Response, next: NextFunction) => Promise<void>)) => {
+  // If validations is a function, it's already a middleware
+  if (typeof validations === 'function') {
+    return validations;
+  }
+  
+  // Otherwise, it's an array of validations, create middleware
   return async (req: Request, res: Response, next: NextFunction) => {
-    await Promise.all(validations.map(validation => validation.run(req)));
+    await Promise.all((validations as ValidationChain[]).map(validation => validation.run(req)));
 
     const errors = validationResult(req);
     if (errors.isEmpty()) {

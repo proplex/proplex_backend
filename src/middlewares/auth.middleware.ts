@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { NotAuthorizedError } from '@/errors/not-authorized-error';
 import { UserRole } from '@/models/user.model';
-import { web3Auth } from '@/utils/jwt';
+import { web3Auth, jwtAuth } from '@/utils/jwt';
 
 export const requireAuth = [
   // First try Web3Auth
@@ -17,7 +17,7 @@ export const requireAuth = [
 ];
 
 export const requireAdmin = [
-  requireAuth,
+  jwtAuth,
   (req: Request, res: Response, next: NextFunction) => {
     if (req.user?.role !== UserRole.ADMIN) {
       throw new NotAuthorizedError('Admin access required');
