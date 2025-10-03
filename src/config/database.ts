@@ -25,9 +25,23 @@ const connectDB = async (): Promise<void> => {
     // Enable debug mode in development
     if (process.env.NODE_ENV === 'development') {
       mongoose.set('debug', (collectionName, method, query, doc) => {
+        // Use a safer stringify method to avoid circular references
+        const safeStringify = (obj: any) => {
+          const cache = new Set();
+          return JSON.stringify(obj, (key, value) => {
+            if (typeof value === 'object' && value !== null) {
+              if (cache.has(value)) {
+                return '[Circular]';
+              }
+              cache.add(value);
+            }
+            return value;
+          });
+        };
+        
         logger.debug(`Mongoose: ${collectionName}.${method}`, {
-          query: JSON.stringify(query),
-          doc: doc ? JSON.stringify(doc) : undefined,
+          query: safeStringify(query),
+          doc: doc ? safeStringify(doc) : undefined,
         });
       });
     }

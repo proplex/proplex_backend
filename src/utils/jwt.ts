@@ -106,6 +106,11 @@ export const verifyWeb3AuthToken = async (token: string): Promise<IUser & { _id:
 
 export const web3Auth = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    // If user is already authenticated (e.g., by admin token validation), skip web3 auth
+    if (req.user) {
+      return next();
+    }
+    
     // Get the token from the Authorization header
     const authHeader = req.headers.authorization;
     
@@ -133,6 +138,11 @@ export const web3Auth = async (req: Request, res: Response, next: NextFunction) 
 
 export const jwtAuth = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    // If user is already authenticated (e.g., by admin token validation), skip jwt auth
+    if (req.user) {
+      return next();
+    }
+    
     // Get the token from the Authorization header
     const authHeader = req.headers.authorization;
     

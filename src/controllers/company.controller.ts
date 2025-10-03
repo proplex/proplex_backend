@@ -38,13 +38,13 @@ import {
   getCompaniesValidator 
 } from '@/validations/company.validator';
 import { 
-  validate, 
   globalErrorHandler, 
   NotFoundError, 
   UnauthorizedError, 
   ForbiddenError, 
   BadRequestError
 } from '@/middleware/error.middleware';
+import { validateRequest } from '@/middlewares';
 
 // Helper function to safely convert string to ObjectId
 const toObjectId = (id: string | Types.ObjectId | undefined): Types.ObjectId => {
@@ -68,10 +68,10 @@ export const handleErrors = (err: any, req: Request, res: Response, next: NextFu
 
 // Company CRUD operations
 export const createCompany: RequestHandler[] = [
-  validate(createCompanyValidator),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = req.user?._id;
+      console.log("userid is here",userId);
       if (!userId) {
         throw new UnauthorizedError('Authentication required');
       }
@@ -88,7 +88,6 @@ export const createCompany: RequestHandler[] = [
 ];
 
 export const getCompanies: RequestHandler[] = [
-  validate(getCompaniesValidator),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { 
