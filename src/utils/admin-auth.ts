@@ -18,6 +18,7 @@ export const validateAdminToken = (req: Request, res: Response, next: NextFuncti
   try {
     // Get the token from the Authorization header
     const authHeader = req.headers.authorization;
+    console.log("header is here:",authHeader);
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       // If no Bearer token, continue to next middleware
@@ -33,6 +34,7 @@ export const validateAdminToken = (req: Request, res: Response, next: NextFuncti
 
     // Verify the token
     const decoded: any = verify(token, JWT_SECRET);
+    console.log("decoded token is here:",decoded);
     
     // Check if the user has admin role
     if (decoded.role === UserRole.ADMIN) {
@@ -40,6 +42,7 @@ export const validateAdminToken = (req: Request, res: Response, next: NextFuncti
       let userIdObj;
       try {
         userIdObj = new Types.ObjectId(decoded.id);
+        console.log("userobj is here:",userIdObj);
       } catch (error) {
         console.log('Invalid userId format in token, using as string');
         // If it's not a valid ObjectId, we'll still use it but log a warning
@@ -53,6 +56,8 @@ export const validateAdminToken = (req: Request, res: Response, next: NextFuncti
         email: decoded.email,
         role: decoded.role
       } as IUser & { _id: Types.ObjectId };
+
+      console.log("user is herein admin-auth ",userIdObj);
       
       console.log('Admin token validated, userId:', decoded.id);
       

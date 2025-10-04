@@ -247,10 +247,6 @@ export const createCompany = async (data: CompanyInput, userId: string): Promise
       {
         $or: [
           { name: data.name },
-          { registrationNumber: data.registrationNumber },
-          { cinNumber: data.cinNumber },
-          { panNumber: data.panNumber },
-          { gstNumber: data.gstNumber },
         ],
       },
       null,

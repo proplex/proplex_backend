@@ -101,23 +101,44 @@ export const adminLogin = async (
       throw new NotAuthorizedError('Invalid credentials');
     }
 
-    // Generate JWT token without database interaction
+    // Get the actual user from database to use the correct ID
+    let user: any = await User.findOne({ email: ADMIN_EMAIL });
+    console.log("user is here:", user);
+    
+    // If user doesn't exist, create it (this shouldn't happen if register was called first)
+    if (!user) {
+      console.log('No existing user found, creating new admin user');
+      user = new User({
+        email: ADMIN_EMAIL,
+        firstName: 'Admin',
+        lastName: 'User',
+        role: UserRole.ADMIN,
+        password: ADMIN_PASSWORD, // Will be hashed by the pre-save hook
+        isEmailVerified: true,
+        isActive: true,
+      });
+      await user.save();
+      console.log('New user created:', user);
+    }
+
+    // Generate JWT token with the actual database user ID
     const token = sign(
       {
-        id: ADMIN_USER_ID,
+        id: user._id.toString(), // Use the actual database ID
         email: ADMIN_EMAIL,
         role: UserRole.ADMIN,
       },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
+    console.log("token is here:", token);
 
     console.log('Login successful, returning token');
     res.status(200).json({
       success: true,
       token,
       user: {
-        id: ADMIN_USER_ID,
+        id: user._id.toString(), // Use the actual database ID
         email: ADMIN_EMAIL,
         firstName: 'Admin',
         lastName: 'User',
@@ -169,6 +190,7 @@ export const adminRegister = async (
             isEmailVerified: true,
             isActive: true,
           });
+          console.log("user is her ein admin register function :",user);
           await user.save();
           console.log('New user created:', user);
         } else if (user.role !== UserRole.ADMIN) {
